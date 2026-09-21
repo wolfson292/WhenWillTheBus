@@ -69,7 +69,26 @@ public sealed class BusService : INotifyPropertyChanged
         Path.Combine(FileSystem.AppDataDirectory, "history.json");
 
     /// <summary>Sign in and start watching. Safe to call again.</summary>
+    /// <remarks>
+    /// Nothing may escape this method. It is called from OnAppearing and
+    /// OnResume, both of which are async void, where an unhandled exception
+    /// terminates the process rather than surfacing anywhere. An app a parent is
+    /// relying on to know where their child is should degrade to an error
+    /// message, never to a crash.
+    /// </remarks>
     public async Task StartAsync()
+    {
+        try
+        {
+            await StartCoreAsync();
+        }
+        catch (Exception error)
+        {
+            Problem = $"Could not start: {error.Message}";
+        }
+    }
+
+    private async Task StartCoreAsync()
     {
         WheresTheBusCredentials? credentials = await _credentials.ReadAsync();
         if (credentials is null)
@@ -82,12 +101,25 @@ public sealed class BusService : INotifyPropertyChanged
 
         await LoadHistoryAsync();
 
-        LiveActivityBridge.OnPushToken(async token =>
+        LiveActivityBridge.OnPushToken(token =>
         {
-            if (_activityJourneyId is string journeyId && Rider is not null)
+            // Fire and forget, and swallow: this runs from a native callback,
+            // and a worker that cannot be reached is a degraded card, not a
+            // reason to take the app down.
+            _ = Task.Run(async () =>
             {
-                await _server.RegisterAsync(journeyId, Rider.ChildId, token);
-            }
+                try
+                {
+                    if (_activityJourneyId is string journeyId && Rider is not null)
+                    {
+                        await _server.RegisterAsync(journeyId, Rider.ChildId, token);
+                    }
+                }
+                catch (Exception)
+                {
+                    // The card still works locally; see LiveActivityIsLocalOnly.
+                }
+            });
         });
 
         _polling?.Cancel();

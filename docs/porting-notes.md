@@ -57,6 +57,42 @@ learned journeys, so the file is written beside the target and moved into place.
 - The publish hold is the **band**, not a fixed tolerance, and the band is never
   dragged to cover a held value.
 
+## Things the simulator cannot catch
+
+**The simulator has a JIT; a device does not.** An iOS device build is fully
+AOT-compiled, so anything needing code generated at run time works perfectly in
+the simulator and aborts on the phone.
+
+This bit once already, and it is worth knowing the shape of it. The ActivityKit
+bridge handed Swift a callback with:
+
+```csharp
+Marshal.GetFunctionPointerForDelegate(_callback)   // needs a runtime thunk
+```
+
+That asks the runtime to generate a reverse P/Invoke thunk. With no JIT there is
+nothing to generate it with, and the process dies with SIGABRT and a native
+stack trace in which every frame symbolicates, wrongly, to
+`AppleCryptoNative_GetRandomBytes`. It only fired once credentials existed,
+because that is the only path that registers the callback -- so it survived
+every simulator run and reached the device.
+
+The fix is a function pointer to an `[UnmanagedCallersOnly]` static method,
+which AOT can emit at build time:
+
+```csharp
+wwtb_set_token_callback((IntPtr)(delegate* unmanaged<IntPtr, void>)&TokenArrived);
+```
+
+Two rules follow, and they apply to anything else crossing this boundary:
+
+- **Never let an exception escape back into Swift.** It is undefined behaviour,
+  and the crash it produces bears no relation to the cause. Every callback
+  catches everything.
+- **Never let an exception escape an `async void` caller.** `OnAppearing` and
+  `OnResume` are both async void, where an unhandled exception terminates the
+  process instead of surfacing. `StartAsync` degrades to a message on screen.
+
 ## Known-unreachable defensive code
 
 `Statistics.RejectOutliers` refuses to discard every sample. With the MAD

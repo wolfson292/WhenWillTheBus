@@ -22,10 +22,6 @@ namespace WhenWillTheBus.App.Services;
 /// </remarks>
 public static partial class LiveActivityBridge
 {
-    /// <summary>Called by Swift whenever the activity's push token changes.</summary>
-    private delegate void TokenCallback(IntPtr token);
-
-    private static TokenCallback? _callback;
     private static Action<string>? _onToken;
 
     [LibraryImport("__Internal")]
@@ -73,19 +69,42 @@ public static partial class LiveActivityBridge
     /// with the worker. IT DOES CHANGE, and a worker pushing to a retired token
     /// fails silently.
     /// </summary>
-    public static void OnPushToken(Action<string> handler)
+    public static unsafe void OnPushToken(Action<string> handler)
     {
         _onToken = handler;
-        _callback = Received;
-        wwtb_set_token_callback(Marshal.GetFunctionPointerForDelegate(_callback));
 
-        static void Received(IntPtr token)
+        // A FUNCTION POINTER to an [UnmanagedCallersOnly] method, not
+        // Marshal.GetFunctionPointerForDelegate.
+        //
+        // That call needs the runtime to generate a reverse P/Invoke thunk at
+        // run time. An iOS DEVICE build is fully AOT-compiled with no JIT, so
+        // there is nothing to generate it with and the process aborts with
+        // SIGABRT. The simulator has a JIT, so it works there -- which is
+        // exactly the shape of bug that reaches a device and no further.
+        wwtb_set_token_callback((IntPtr)(delegate* unmanaged<IntPtr, void>)&TokenArrived);
+    }
+
+    /// <summary>Called by Swift whenever the activity's push token changes.</summary>
+    /// <remarks>
+    /// Nothing may be allowed to escape back into Swift: an exception crossing a
+    /// native boundary is undefined behaviour, and the failure it produces has
+    /// no relationship to the cause. A token we cannot register is worth far
+    /// less than a running app.
+    /// </remarks>
+    [UnmanagedCallersOnly]
+    private static void TokenArrived(IntPtr token)
+    {
+        try
         {
             string? hex = Marshal.PtrToStringUTF8(token);
             if (!string.IsNullOrEmpty(hex))
             {
                 _onToken?.Invoke(hex);
             }
+        }
+        catch (Exception)
+        {
+            // Deliberately swallowed. See above.
         }
     }
 
