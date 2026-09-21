@@ -101,6 +101,33 @@ not help; `scan-and-mount` does.
 
 ## Running the worker
 
+### On a remote Docker host, managed by Portainer
+
+```bash
+./scripts/deploy-server.sh          # syncs source, builds the image ON that host
+```
+
+Building on the target sidesteps cross-compiling from an arm64 Mac, and needs
+neither a registry nor a Git remote. Portainer then manages the stack normally —
+environment variables, logs, restart, redeploy. After a code change, re-run the
+script and hit **Redeploy**.
+
+Host, user and path come from `WWTB_HOST` / `WWTB_USER` / `WWTB_ROOT`.
+
+On the host:
+
+```
+/opt/whenwillthebus/context/   build context (synced; disposable)
+/opt/whenwillthebus/data/      learned history  -> /data          MUST persist
+/opt/whenwillthebus/secrets/   AuthKey.p8       -> /run/secrets   read-only
+```
+
+The secrets *directory* is mounted, not the `.p8` file. Bind-mounting a file
+that does not exist yet makes Docker create a **directory** with that name, and
+the failure that follows never mentions the mount.
+
+### Locally with compose
+
 ```bash
 cp .env.example .env    # then fill it in
 mkdir -p secrets && cp ~/Downloads/AuthKey_XXXXXXXXXX.p8 secrets/AuthKey.p8
