@@ -302,7 +302,12 @@ app.MapPost("/push/test", async (
                 ("Test push", "If you can read this, the worker can reach your Lock Screen."),
                 token);
 
-        if (result.TokenIsDead)
+        // Forget the token when the activity is gone: because Apple said so, or
+        // because we just ended it. A registration outliving its activity is a
+        // push to nothing, and it muddies the next test by answering alongside
+        // the live one.
+        bool forget = result.TokenIsDead || (ending && result.Delivered);
+        if (forget)
         {
             registry.Forget(activity.PushToken);
         }
@@ -313,7 +318,7 @@ app.MapPost("/push/test", async (
             delivered = result.Delivered,
             appleStatus = (int)result.Status,
             appleReason = result.Reason,
-            tokenForgotten = result.TokenIsDead,
+            tokenForgotten = forget,
         });
     }
 
