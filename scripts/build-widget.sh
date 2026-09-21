@@ -31,10 +31,14 @@ if [ "$DESTINATION" = "device" ]; then
     exit 1
   fi
   SIGNING=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES)
+  export WWTB_TEAM="$DEVELOPMENT_TEAM"
 else
   SDK="iphonesimulator"
   RID="iossimulator-arm64"
-  SIGNING=()
+
+  # The simulator needs no profile and must build without one.
+  SIGNING=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="")
+  export WWTB_TEAM=""
 fi
 
 echo "==> Regenerating the widget project from ios/project.yml"

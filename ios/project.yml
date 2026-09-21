@@ -52,11 +52,40 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         SKIP_INSTALL: YES
 
-        # The simulator does not require a signed extension, and leaving signing
-        # off here keeps the build reproducible without a provisioning profile.
-        # A device build needs a real team: pass
-        #   DEVELOPMENT_TEAM=XXXXXXXXXX CODE_SIGNING_ALLOWED=YES
-        # on the xcodebuild command line.
-        CODE_SIGNING_ALLOWED: NO
-        CODE_SIGNING_REQUIRED: NO
-        CODE_SIGN_IDENTITY: ""
+        # Signed automatically, like the host app.
+        #
+        # An embedded extension must be signed with the SAME certificate as its
+        # parent or the build fails late, at embedded-binary validation. Turning
+        # signing off HERE and on at the command line produced exactly that, so
+        # the default is now "sign", and the simulator path -- which needs no
+        # profile and must work without one -- opts out explicitly in
+        # scripts/build-widget.sh.
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ${WWTB_TEAM}
+
+  # Exists only to make Xcode mint provisioning profiles -- see
+  # Provisioning/ProvisioningHostApp.swift. Never installed.
+  ProvisioningHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: Provisioning
+    entitlements:
+      path: Provisioning/Host.entitlements
+    info:
+      path: Provisioning/Info.plist
+      properties:
+        CFBundleDisplayName: Provisioning
+        UILaunchScreen: {}
+        NSSupportsLiveActivities: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ${WWTB_BUNDLE_ID}
+        PRODUCT_NAME: ProvisioningHost
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: Provisioning/Host.entitlements
+    dependencies:
+      - target: BusWidget
+        embed: true
