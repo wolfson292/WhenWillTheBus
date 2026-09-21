@@ -1,0 +1,10 @@
+{
+  "solution": {
+    "path": "WhenWillTheBus.slnx",
+    "projects": [
+      "src\\WhenWillTheBus.Core\\WhenWillTheBus.Core.csproj",
+      "src\\WhenWillTheBus.Server\\WhenWillTheBus.Server.csproj",
+      "tests\\WhenWillTheBus.Core.Tests\\WhenWillTheBus.Core.Tests.csproj"
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>UIDeviceFamily</key>
+	<array>
+		<integer>1</integer>
+		<integer>2</integer>
+	</array>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>XSAppIconAssets</key>
+	<string>Assets.xcassets/appicon.appiconset</string>
+
+	<!-- Live Activities. Without this the activity simply never starts, and
+	     there is no error to tell you why. -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
+	<true/>
+
+	<!-- Background modes.
+	     'remote-notification' lets the worker's silent pushes wake the app.
+	     'location' is here ONLY if you enable the phone-side "did they board"
+	     check, which needs the rider's own device; delete it otherwise, because
+	     App Review will ask what it is for and an unused entitlement is a
+	     reason for rejection. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+
+	<!-- Only needed for the optional boarding check of section 6. It asks
+	     whether the rider's phone left school WITH the bus; both halves are
+	     required, and neither is stored or sent anywhere. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used only to check whether your rider left school on the bus when their badge scan is missed. Location stays on this device.</string>
+</dict>
+</plist>

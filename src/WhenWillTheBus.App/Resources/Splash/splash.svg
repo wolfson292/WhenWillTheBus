@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <g transform="translate(64 64)">
+    <rect x="-40" y="-28" width="80" height="48" rx="9" fill="#F7C948"/>
+    <rect x="-33" y="-21" width="17" height="14" rx="3" fill="#1B1B1F" opacity="0.82"/>
+    <rect x="-12" y="-21" width="17" height="14" rx="3" fill="#1B1B1F" opacity="0.82"/>
+    <rect x="9" y="-21" width="17" height="14" rx="3" fill="#1B1B1F" opacity="0.82"/>
+    <circle cx="-23" cy="23" r="9" fill="#1B1B1F"/>
+    <circle cx="-23" cy="23" r="4" fill="#F7C948"/>
+    <circle cx="23" cy="23" r="9" fill="#1B1B1F"/>
+    <circle cx="23" cy="23" r="4" fill="#F7C948"/>
+  </g>
+</svg>

@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- iOS only. The prediction engine is platform-agnostic and also runs on
+         the server; this project is the phone. -->
+    <TargetFramework>net10.0-ios</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- LibraryImport generates unsafe marshalling code for the ActivityKit
+         bridge. None of our own code is unsafe. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <ApplicationTitle>When Will The Bus</ApplicationTitle>
+
+    <!-- Must match Apns:BundleId on the server, and the widget extension's
+         parent bundle id. A mismatch is a push Apple silently drops. -->
+    <ApplicationId>com.example.whenwillthebus</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+
+    <!-- ActivityKit needs 16.2; Live Activities are the reason for this app. -->
+    <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" />
+    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#1B1B1F" BaseSize="128,128" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WhenWillTheBus.Core\WhenWillTheBus.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The Swift bridge and the widget extension, built by
+       scripts/build-ios-native.sh. See docs/ios-build.md: WidgetKit UI cannot be
+       written in C#, so this is the one native piece. -->
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)..\..\ios\build\WhenWillTheBusNative.xcframework')">
+    <NativeReference Include="..\..\ios\build\WhenWillTheBusNative.xcframework">
+      <Kind>Framework</Kind>
+      <ForceLoad>True</ForceLoad>
+    </NativeReference>
+  </ItemGroup>
+
+</Project>

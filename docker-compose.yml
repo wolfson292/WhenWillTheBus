@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Secrets are read from a .env file that is NOT in this repository (see
+# .env.example). Both the WheresTheBus password and the APNs signing key are
+# secrets, and this service also knows a child's live location -- keep it on
+# your own network and do not expose it to the internet without TLS and a
+# reverse proxy you trust.
+
+services:
+  whenwillthebus:
+    build:
+      context: .
+      dockerfile: src/WhenWillTheBus.Server/Dockerfile
+    container_name: whenwillthebus
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      # The APNs auth key, read-only. Never bake this into the image.
+      - ./secrets/AuthKey.p8:/run/secrets/AuthKey.p8:ro
+    environment:
+      WWTB_Api__Key: ${WWTB_API_KEY:?set WWTB_API_KEY in .env}
+      WWTB_WheresTheBus__Email: ${WTB_EMAIL:?set WTB_EMAIL in .env}
+      WWTB_WheresTheBus__Password: ${WTB_PASSWORD:?set WTB_PASSWORD in .env}
+      WWTB_WheresTheBus__DeviceId: ${WTB_DEVICE_ID:?set WTB_DEVICE_ID in .env}
+      WWTB_WheresTheBus__TimeZone: ${WTB_TIMEZONE:-America/New_York}
+      WWTB_Apns__KeyId: ${APNS_KEY_ID:?set APNS_KEY_ID in .env}
+      WWTB_Apns__TeamId: ${APNS_TEAM_ID:?set APNS_TEAM_ID in .env}
+      WWTB_Apns__BundleId: ${APNS_BUNDLE_ID:?set APNS_BUNDLE_ID in .env}
+      WWTB_Apns__PrivateKeyPath: /run/secrets/AuthKey.p8
+      # A development build registers against Apple's sandbox, and a token from
+      # one environment is rejected outright by the other -- as a silent
+      # non-delivery, so this is worth getting right first.
+      WWTB_Apns__UseSandbox: ${APNS_SANDBOX:-false}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
