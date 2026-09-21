@@ -130,4 +130,17 @@ around 17:20.
 | Card never starts | Live Activities off for the app in Settings |
 | Card starts, freezes when backgrounded | No push token: check the Push Notifications capability on the App ID |
 | Worker says pushes succeed, nothing appears | Sandbox/production mismatch — step 7 |
+
+Before blaming any of that, ask Apple directly:
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $WWTB_API_KEY" http://<worker>/apns/check
+```
+
+It pushes to a token that cannot exist and reports what Apple says about
+everything else. `BadDeviceToken` is the healthy answer: the key, the team and
+the topic were all accepted and only the fake token was refused. Any other
+reason names the part that is actually wrong. This works on a holiday, at
+midnight, and in August — the natural trigger is a school run, which is a
+terrible feedback loop for a configuration error.
 | Card vanishes before the afternoon | Expected: iOS retires an activity ~8 hours after its last update |

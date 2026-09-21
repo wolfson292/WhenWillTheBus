@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using WhenWillTheBus.Core;
 using WhenWillTheBus.Core.Api;
 using WhenWillTheBus.Core.Model;
+using WhenWillTheBus.Core.Notifications;
 using WhenWillTheBus.Core.Prediction;
 using WhenWillTheBus.Core.Storage;
 using WhenWillTheBus.Server.Apns;
@@ -243,6 +244,74 @@ app.MapGet("/history/export", (BusMonitor monitor, PredictionEngine engine) =>
         .ToList();
 
     return Results.Text(HistoryExport.ToBundle(riders), "application/json");
+});
+
+// Prove the APNs configuration without waiting for a school run.
+//
+// Everything about push is silent when it is wrong: a bad signing key, a
+// mismatched team, the wrong topic, or a sandbox/production mix-up all end with
+// Apple accepting nothing and nobody being told. The only natural trigger is a
+// real journey, which happens twice a school day and not at all in the
+// holidays -- a terrible feedback loop for a configuration error.
+//
+// So: push to a token that certainly is not registered, and read the REASON
+// Apple gives back. BadDeviceToken means the JWT was signed correctly, the team
+// was recognised and the topic was accepted -- everything except the token,
+// which we knew. Any other reason names the part that is actually wrong.
+app.MapPost("/apns/check", async (ApnsClient apns, IOptions<ApnsOptions> options, CancellationToken token) =>
+{
+    const string NotARealToken = "00000000000000000000000000000000000000000000000000000000000000ff";
+
+    BusActivityState probe = new()
+    {
+        Stage = JourneyStage.Idle,
+        FixedAt = DateTimeOffset.UtcNow,
+    };
+
+    PushResult result = await apns.UpdateAsync(
+        NotARealToken, probe, PushUrgency.Passive, cancellationToken: token);
+
+    ApnsOptions apnsOptions = options.Value;
+    (bool healthy, string verdict) = result.Reason switch
+    {
+        "BadDeviceToken" or "DeviceTokenNotForTopic" or "Unregistered" => (true,
+            "Credentials are good. Apple signed off on the key, the team and the topic, "
+            + "and rejected only the fake token -- which is the point."),
+
+        "InvalidProviderToken" => (false,
+            "Apple would not accept the signing token. The .p8, Apns:KeyId and Apns:TeamId "
+            + "have to belong together; one of them does not."),
+
+        "ExpiredProviderToken" => (false,
+            "Apple says the signing token has expired, which normally means this host's "
+            + "clock is wrong rather than the key."),
+
+        "TopicDisallowed" or "BadTopic" => (false,
+            $"Apple refused the topic '{apnsOptions.LiveActivityTopic}'. Apns:BundleId must be "
+            + "the APP's bundle id, and that App ID needs the Push Notifications capability."),
+
+        "Forbidden" => (false,
+            "Apple refused outright. Usually the key has been revoked."),
+
+        null when result.Delivered => (false,
+            "Apple ACCEPTED a push to a token that cannot exist, which should be impossible. "
+            + "Treat this as unverified."),
+
+        _ => (false, $"Unrecognised response from Apple: {result.Reason ?? "(none)"}."),
+    };
+
+    return Results.Ok(new
+    {
+        healthy,
+        verdict,
+        environment = apnsOptions.UseSandbox ? "sandbox" : "production",
+        host = apnsOptions.Host,
+        topic = apnsOptions.LiveActivityTopic,
+        keyId = apnsOptions.KeyId,
+        teamId = apnsOptions.TeamId,
+        appleStatus = (int)result.Status,
+        appleReason = result.Reason,
+    });
 });
 
 // What the worker knows, WITHOUT coordinates. A status page is a convenience;
