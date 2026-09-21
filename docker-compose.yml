@@ -33,8 +33,3 @@ services:
       # one environment is rejected outright by the other -- as a silent
       # non-delivery, so this is worth getting right first.
       WWTB_Apns__UseSandbox: ${APNS_SANDBOX:-false}
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/health"]
-      interval: 60s
-      timeout: 5s
-      retries: 3

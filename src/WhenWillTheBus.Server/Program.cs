@@ -13,6 +13,28 @@ using WhenWillTheBus.Server.Devices;
 using WhenWillTheBus.Server.LiveActivity;
 using WhenWillTheBus.Server.Monitoring;
 
+// Container health check.
+//
+// The aspnet runtime image ships with neither curl nor wget, so a HEALTHCHECK
+// written against either is not merely broken -- it fails silently and forever,
+// and the container reports unhealthy while serving perfectly well. Probing
+// ourselves needs no extra package and nothing new in the image.
+if (args.Contains("--healthcheck"))
+{
+    try
+    {
+        using HttpClient probe = new() { Timeout = TimeSpan.FromSeconds(5) };
+        string url = Environment.GetEnvironmentVariable("HEALTHCHECK_URL")
+            ?? "http://127.0.0.1:8080/health";
+        using HttpResponseMessage reply = await probe.GetAsync(url);
+        return reply.IsSuccessStatusCode ? 0 : 1;
+    }
+    catch (Exception)
+    {
+        return 1;
+    }
+}
+
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 // Secrets come from the environment or a Docker secret, never from a file in

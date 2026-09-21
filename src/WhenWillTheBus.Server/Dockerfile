@@ -29,4 +29,10 @@ EXPOSE 8080
 # where a child is right now.
 USER $APP_UID
 
+# Probes itself: see the --healthcheck branch in Program.cs. The runtime image
+# has no curl and no wget, so anything written against those silently reports
+# unhealthy for ever.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=20s --retries=3 \
+  CMD ["dotnet", "WhenWillTheBus.Server.dll", "--healthcheck"]
+
 ENTRYPOINT ["dotnet", "WhenWillTheBus.Server.dll"]
