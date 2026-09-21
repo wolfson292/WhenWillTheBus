@@ -124,24 +124,45 @@ CAPABILITY
 echo
 DIR="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 PUSH_OK=1
+GROUP_OK=1
 for p in "$DIR"/*.mobileprovision; do
   [ -e "$p" ] || continue
   PLIST=$(security cms -D -i "$p" 2>/dev/null)
   APPID=$(echo "$PLIST" | plutil -extract Entitlements.application-identifier raw - 2>/dev/null || echo "?")
   APS=$(echo "$PLIST" | plutil -extract Entitlements.aps-environment raw - 2>/dev/null || echo "")
+  GRP=$(echo "$PLIST" | plutil -extract Entitlements.com\\.apple\\.security\\.application-groups.0 raw - 2>/dev/null || echo "")
   case "$APPID" in
     # Only the APP needs the push entitlement: the activity push token is issued
     # to the app, not to the extension. Requiring it of the widget too would
     # warn for ever about something that is correct.
     *".$WWTB_BUNDLE_ID")
-      printf "  %-55s push=%s\n" "$APPID" "${APS:-NONE (required)}"
+      printf "  %-55s push=%-14s group=%s\n" "$APPID" "${APS:-NONE (required)}" "${GRP:-NONE (required)}"
       [ -n "$APS" ] || PUSH_OK=0
+      [ -n "$GRP" ] || GROUP_OK=0
       ;;
     *"$WWTB_BUNDLE_ID".*)
-      printf "  %-55s push=%s\n" "$APPID" "${APS:-none (not needed)}"
+      printf "  %-55s push=%-14s group=%s\n" "$APPID" "${APS:-none (not needed)}" "${GRP:-NONE (required)}"
+      [ -n "$GRP" ] || GROUP_OK=0
       ;;
   esac
 done
+
+if [ "$GROUP_OK" = "0" ]; then
+  cat >&2 <<'GROUPS'
+
+WARNING: a profile does not grant the App Group.
+
+Both the app and the widget must share it, and an entitlement the profile
+does not carry is stripped from the build in silence. The widget then finds
+no snapshot and shows its placeholder for ever, with nothing to say why.
+
+Enable App Groups on BOTH identifiers, ticking the group under Edit:
+
+  https://developer.apple.com/account/resources/identifiers/list
+
+GROUPS
+  exit 5
+fi
 
 if [ "$PUSH_OK" = "0" ]; then
   cat >&2 <<'WARN'
