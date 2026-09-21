@@ -26,6 +26,35 @@ export WWTB_TEAM="$DEVELOPMENT_TEAM"
 echo "==> Provisioning $WWTB_BUNDLE_ID and $WWTB_BUNDLE_ID.BusWidget"
 xcodegen generate --spec ios/project.yml --project ios >/dev/null
 
+# Target the connected device, not "generic/platform=iOS".
+#
+# Xcode registers a device with the account as a side effect of building FOR it.
+# A generic destination gives it nothing to register, so the profile comes back
+# covering only devices already on file -- and the install then fails with
+# "This provisioning profile cannot be installed on this device", which does not
+# mention registration at all.
+DEVICE_UDID=$(xcrun devicectl list devices --json-output /tmp/wwtb-devices.json >/dev/null 2>&1 && python3 -c "
+import json
+try:
+    d = json.load(open('/tmp/wwtb-devices.json'))
+except Exception:
+    raise SystemExit
+for x in d.get('result', {}).get('devices', []):
+    hw = x.get('hardwareProperties', {})
+    state = x.get('connectionProperties', {}).get('tunnelState', '')
+    if hw.get('serialNumber') and state != 'unavailable':
+        print(hw.get('udid'))
+        break
+" 2>/dev/null || true)
+
+if [ -n "$DEVICE_UDID" ]; then
+  echo "    registering device $DEVICE_UDID"
+  DESTINATION=(-destination "platform=iOS,id=$DEVICE_UDID")
+else
+  echo "    no device connected -- profiles will cover only devices already registered"
+  DESTINATION=(-destination "generic/platform=iOS")
+fi
+
 # The widget target defaults to unsigned, which is right for the simulator and
 # wrong here: an extension with no profile of its own cannot be embedded in a
 # signed app. Overridden on the command line so the default stays simulator-safe.
@@ -34,7 +63,7 @@ xcodebuild \
   -scheme ProvisioningHost \
   -sdk iphoneos \
   -configuration Release \
-  -destination "generic/platform=iOS" \
+  "${DESTINATION[@]}" \
   -derivedDataPath ios/build/prov \
   DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
   CODE_SIGN_STYLE=Automatic \
@@ -42,6 +71,26 @@ xcodebuild \
   CODE_SIGNING_REQUIRED=YES \
   -allowProvisioningUpdates \
   build > "$ROOT/ios/build/provision.log" 2>&1 || {
+    # The commonest failure by far, and the message does not say what to do.
+    # -allowProvisioningUpdates creates App IDs and mints profiles, but it will
+    # NOT register a device it has never seen: that is a portal action.
+    if grep -q "isn't registered in your developer account" "$ROOT/ios/build/provision.log"; then
+      cat >&2 <<REGISTER
+
+This device is not registered in your Apple Developer account, and
+-allowProvisioningUpdates will not add it for you.
+
+  Device UDID:  ${DEVICE_UDID:-<connect the device first>}
+
+  https://developer.apple.com/account/resources/devices/list
+  -> + -> Register a Device -> paste the UDID above -> Continue -> Register
+
+Then re-run this script.
+
+REGISTER
+      exit 3
+    fi
+
     echo "error: provisioning failed. Last lines:" >&2
     grep -iE "error|does not (support|have)|capability" "$ROOT/ios/build/provision.log" | sort -u | tail -10 >&2
     exit 1
