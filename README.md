@@ -206,11 +206,15 @@ readings to the same answer.
 - The widget extension: builds, and installs inside the app as
   `PlugIns/BusWidget.appex` with the right extension point and a bundle id
   nested under the app's.
+- **On a real iPhone** (18 Pro Max, iOS 26): signed with a development profile
+  carrying `aps-environment`, installed, and launched. iOS loads the widget
+  extension as its own process alongside the app, which is what confirms the
+  embedding is right.
 
-**Built but not exercised against real data** — the app has only been run signed
-out, so the prediction path has been proven by the test suite rather than on a
-live bus. A Live Activity cannot meaningfully run in the simulator, so the card
-has never actually been rendered: that needs a device.
+**Not yet exercised against real data** — the app has only been run signed out,
+so the prediction path is proven by the test suite rather than by a live bus,
+and no Live Activity has been rendered yet because none has had a journey to
+show. The worker has never pushed to a real device.
 
 **Not started**
 
