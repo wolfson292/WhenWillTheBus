@@ -151,6 +151,18 @@ Check it:
 curl -s -H "Authorization: Bearer $WWTB_API_KEY" http://localhost:8080/status
 ```
 
+### Reaching it from outside
+
+Live Activity pushes do NOT need this: those go worker → Apple → phone, all
+outbound. What needs inbound access is registering a push token and syncing
+history — which matters, because a parent opening the app on cellular during the
+school run is exactly when a card gets registered.
+
+[deploy/swag/](deploy/swag/) has a reverse-proxy config that exposes the worker
+at a subfolder, restricted to Cloudflare origin IPs and rate limited per real
+visitor. See its README for why it skips the session auth every other service
+uses, and what stands in for it.
+
 Everything but `/health` needs the key. **This service holds the family's
 WheresTheBus password and knows where a child is right now** — keep it on your
 own network, and do not expose it to the internet without TLS and a reverse
