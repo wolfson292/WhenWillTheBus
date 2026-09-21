@@ -128,15 +128,17 @@ proxy you trust.
 ```bash
 ./scripts/build-ios-native.sh          # the ActivityKit bridge
 dotnet build src/WhenWillTheBus.App
+./scripts/build-widget.sh              # the Live Activity card, embedded
 xcrun simctl boot "iPhone 17 Pro"
 xcrun simctl install "iPhone 17 Pro" \
   src/WhenWillTheBus.App/bin/Debug/net10.0-ios/iossimulator-arm64/WhenWillTheBus.App.app
 xcrun simctl launch "iPhone 17 Pro" com.example.whenwillthebus
 ```
 
-The widget extension needs Xcode once. See [docs/ios-build.md](docs/ios-build.md).
-Live Activities do not run in the simulator in any useful way — the card itself
-needs a device.
+The widget extension is generated from `ios/project.yml` by XcodeGen, so there
+is no hand-clicked Xcode project to keep in step — see
+[docs/ios-build.md](docs/ios-build.md). Live Activities do not run in the
+simulator in any useful way, so the card itself still needs a device.
 
 ---
 
@@ -198,11 +200,14 @@ readings to the same answer.
 - 102 tests; 22 mechanisms falsified.
 - The MAUI app: builds, installs and runs in the simulator. Both screens render
   and navigate.
+- The widget extension: builds, and installs inside the app as
+  `PlugIns/BusWidget.appex` with the right extension point and a bundle id
+  nested under the app's.
 
 **Built but not exercised against real data** — the app has only been run signed
 out, so the prediction path has been proven by the test suite rather than on a
-live bus. The widget extension still needs its one-time Xcode setup, and a Live
-Activity needs a real device.
+live bus. A Live Activity cannot meaningfully run in the simulator, so the card
+has never actually been rendered: that needs a device.
 
 **Not started**
 

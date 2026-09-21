@@ -1,0 +1,62 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The Live Activity widget extension.
+#
+# Generated rather than hand-built in Xcode, so it is reproducible, reviewable
+# in a diff, and regenerable after any change:
+#
+#     xcodegen generate --spec ios/project.yml
+#
+# WidgetKit UI has no C# path, so this target is the one piece of the app that
+# must be SwiftUI. It holds only the card's LAYOUT -- everything deciding what
+# the card SAYS is C# in WhenWillTheBus.Core.
+
+name: WhenWillTheBusWidget
+
+options:
+  bundleIdPrefix: com.example.whenwillthebus
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+
+targets:
+  BusWidget:
+    type: app-extension
+    platform: iOS
+
+    # BusActivityAttributes.swift is compiled into BOTH this extension and, via
+    # the xcframework, the app itself. The two processes exchange that type, and
+    # a copy that differs in either is an activity that starts perfectly and then
+    # ignores every update -- no error, no log line, nothing on the phone.
+    #
+    # In a hand-built Xcode project this is the "Target Membership" checkbox
+    # everyone forgets. Here it is structural: both builds read the same file
+    # from the same path, so they cannot drift apart.
+    sources:
+      - path: LiveActivity
+
+    info:
+      path: BusWidget/Info.plist
+      properties:
+        CFBundleDisplayName: Bus
+        CFBundleName: BusWidget
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.whenwillthebus.BusWidget
+        PRODUCT_NAME: BusWidget
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SKIP_INSTALL: YES
+
+        # The simulator does not require a signed extension, and leaving signing
+        # off here keeps the build reproducible without a provisioning profile.
+        # A device build needs a real team: pass
+        #   DEVELOPMENT_TEAM=XXXXXXXXXX CODE_SIGNING_ALLOWED=YES
+        # on the xcodebuild command line.
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGN_IDENTITY: ""

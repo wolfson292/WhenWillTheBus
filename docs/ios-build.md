@@ -42,37 +42,55 @@ bridge call fails at runtime with an `EntryPointNotFoundException`.
 
 ## 3. The widget extension
 
-This is the one step Xcode has to do, and it only has to be done once.
+Generated, not hand-built:
 
-1. Open Xcode → **File → New → Project → iOS → App**, named `WhenWillTheBusHost`,
-   bundle id **exactly** the `ApplicationId` in
-   `src/WhenWillTheBus.App/WhenWillTheBus.App.csproj`
-   (`com.example.whenwillthebus` as written — change both together).
-2. **File → New → Target → Widget Extension**, named `BusWidget`. Tick
-   **Include Live Activity**. Its bundle id becomes
-   `com.example.whenwillthebus.BusWidget`.
-3. Delete the generated `BusWidget` Swift files and add instead:
-   - `ios/LiveActivity/BusActivityAttributes.swift`
-   - `ios/LiveActivity/BusLiveActivity.swift`
-4. **`BusActivityAttributes.swift` must be a member of BOTH targets** — the app
-   and the widget extension. Select it, open the File Inspector, and tick both
-   under *Target Membership*.
+```bash
+./scripts/build-widget.sh                 # simulator
+DEVELOPMENT_TEAM=XXXXXXXXXX ./scripts/build-widget.sh device Release
+```
 
-   This is the single most important checkbox in this document. The two
-   processes exchange this type. A copy that differs in either one is an
-   activity that starts perfectly and then ignores every update, with no error,
-   no log line, and nothing on the phone.
-5. Build the extension (Release, Any iOS Device) and copy the resulting
-   `BusWidget.appex` into the MAUI app bundle under `Plugins/`:
+That regenerates `ios/WhenWillTheBusWidget.xcodeproj` from `ios/project.yml`
+with XcodeGen, builds `BusWidget.appex`, and embeds it in the MAUI app bundle
+under `PlugIns/`.
 
-   ```bash
-   cp -R "$DERIVED_DATA/Build/Products/Release-iphoneos/BusWidget.appex" \
-         src/WhenWillTheBus.App/bin/.../WhenWillTheBus.App.app/Plugins/
-   ```
+**This used to be a dozen clicks through Xcode's New Target wizard.** It is a
+generated project instead for three reasons: it survives in a diff, it can be
+regenerated after any change, and — most importantly — it removes the step
+everybody gets wrong.
 
-6. Add `NSSupportsLiveActivities` to the *extension's* Info.plist as well as the
-   app's. It is already in the app's at
-   `src/WhenWillTheBus.App/Platforms/iOS/Info.plist`.
+### The checkbox that is no longer a checkbox
+
+In a hand-built project, `BusActivityAttributes.swift` has to be ticked into
+*both* the app target and the widget extension target under Target Membership.
+Miss it and the activity starts perfectly, then ignores every update: no error,
+no log line, nothing on the phone.
+
+Here the app gets that type through `WhenWillTheBusNative.xcframework` (step 2)
+and the extension compiles it from `ios/LiveActivity/`. Both read the same file
+from the same path, so they cannot drift apart and there is no checkbox to miss.
+
+### If you would rather use Xcode's UI
+
+You can still open `ios/WhenWillTheBusWidget.xcodeproj` and work in it normally.
+Just re-run `xcodegen generate --spec ios/project.yml` afterwards, or edit
+`project.yml` instead — regeneration overwrites the project file.
+
+### Verifying it landed
+
+```bash
+APP=$(xcrun simctl get_app_container booted com.example.whenwillthebus app)
+ls "$APP/PlugIns"                                                   # BusWidget.appex
+plutil -extract NSExtension.NSExtensionPointIdentifier raw "$APP/PlugIns/BusWidget.appex/Info.plist"
+plutil -extract NSSupportsLiveActivities raw "$APP/Info.plist"      # true
+```
+
+Two things iOS will not warn you about:
+
+- The directory is **`PlugIns`**, with that exact spelling. An extension anywhere
+  else is not an error, it is simply never loaded.
+- The extension's bundle id must sit **under** the app's
+  (`com.example.whenwillthebus.BusWidget` under `com.example.whenwillthebus`).
+  The build script checks both.
 
 ## 4. Push
 
