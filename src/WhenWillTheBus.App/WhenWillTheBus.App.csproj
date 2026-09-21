@@ -38,11 +38,16 @@
        that name up by convention and applies it to every build, including the
        simulator, whatever conditions you write. Naming them otherwise is what
        keeps this a choice rather than a default. -->
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'ios-arm64' And '$(Configuration)' == 'Debug'">
-    <CodesignEntitlements>Platforms/iOS/Entitlements.Device.Debug.plist</CodesignEntitlements>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'ios-arm64' And '$(Configuration)' != 'Debug'">
-    <CodesignEntitlements>Platforms/iOS/Entitlements.Device.Release.plist</CodesignEntitlements>
+  <!-- Which APNs environment the app claims. This follows the PROVISIONING, not
+       the build configuration: a Release build signed with a DEVELOPMENT profile
+       is still a development app, and claiming 'production' against a profile
+       that grants 'development' is an install failure at best and a silently
+       undeliverable push at worst. Distribution builds pass
+       -p:ApnsEnvironment=production explicitly. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'ios-arm64'">
+    <ApnsEnvironment Condition="'$(ApnsEnvironment)' == ''">development</ApnsEnvironment>
+    <CodesignEntitlements Condition="'$(ApnsEnvironment)' == 'production'">Platforms/iOS/Entitlements.Device.Production.plist</CodesignEntitlements>
+    <CodesignEntitlements Condition="'$(ApnsEnvironment)' != 'production'">Platforms/iOS/Entitlements.Device.Development.plist</CodesignEntitlements>
   </PropertyGroup>
 
   <ItemGroup>

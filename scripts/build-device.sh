@@ -28,8 +28,11 @@ if [ "$BUNDLE_ID" = "com.example.whenwillthebus" ]; then
   exit 1
 fi
 
+APNS_ENV="${APNS_ENVIRONMENT:-development}"
+
 echo "==> Bundle id      $BUNDLE_ID"
 echo "==> Team           $DEVELOPMENT_TEAM"
+echo "==> APNs           $APNS_ENV  (worker needs APNS_SANDBOX=$([ "$APNS_ENV" = development ] && echo true || echo false))"
 
 echo "==> 1/4 ActivityKit bridge"
 ./scripts/build-ios-native.sh > /dev/null
@@ -41,6 +44,7 @@ dotnet build src/WhenWillTheBus.App \
   -p:CodesignKey="Apple Development" \
   -p:CodesignProvision="Automatic" \
   -p:CodesignTeam="$DEVELOPMENT_TEAM" \
+  -p:ApnsEnvironment="$APNS_ENV" \
   -v q --nologo
 
 echo "==> 3/4 Widget extension, embedded"
@@ -51,7 +55,9 @@ APP="src/WhenWillTheBus.App/bin/Release/net10.0-ios/ios-arm64/WhenWillTheBus.App
 echo "==> 4/4 Checks"
 EXT_ID=$(plutil -extract CFBundleIdentifier raw "$APP/PlugIns/BusWidget.appex/Info.plist")
 LIVE=$(plutil -extract NSSupportsLiveActivities raw "$APP/Info.plist" 2>/dev/null || echo "MISSING")
+APS=$(codesign -d --entitlements - --xml "$APP" 2>/dev/null | plutil -extract aps-environment raw - 2>/dev/null || echo "NONE")
 echo "    extension      $EXT_ID"
+echo "    aps-environment $APS"
 echo "    live activities $LIVE"
 [ "$LIVE" = "true" ] || { echo "error: NSSupportsLiveActivities is not set; the card will never start" >&2; exit 1; }
 
