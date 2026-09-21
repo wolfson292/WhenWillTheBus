@@ -10,6 +10,7 @@ using WhenWillTheBus.Core.Model;
 using WhenWillTheBus.Core.Notifications;
 using WhenWillTheBus.Core.Prediction;
 using WhenWillTheBus.Core.Storage;
+using WhenWillTheBus.Server.Api;
 using WhenWillTheBus.Server.Apns;
 using WhenWillTheBus.Server.Devices;
 using WhenWillTheBus.Server.LiveActivity;
@@ -231,6 +232,15 @@ app.MapPost("/history/import", async (
     await monitor.PersistAsync(token);
     return Results.Ok(new { riders = loaded });
 });
+
+// Everything a phone needs to draw its screens.
+//
+// Lets a phone run with NO WheresTheBus credentials: the family password then
+// lives in one place rather than on every phone, and the third-party API sees
+// one poller instead of four. Carries positions, so it sits behind the API key
+// like everything else.
+app.MapGet("/rider/state", (BusMonitor monitor, PredictionEngine engine, LocalClock clock) =>
+    Results.Text(RiderState.Serialise(monitor.Students, engine, clock, clock.Now), "application/json"));
 
 // Hand the phone what this worker has learned.
 //

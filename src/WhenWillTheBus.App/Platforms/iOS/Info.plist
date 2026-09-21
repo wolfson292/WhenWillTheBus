@@ -23,6 +23,22 @@
 
 	<!-- Live Activities. Without this the activity simply never starts, and
 	     there is no error to tell you why. -->
+	<!-- Setup links: whenwillthebus://setup?url=...&key=...
+	     Lets a family member be configured by tapping one link instead of
+	     typing an address and a forty-character key. The app always asks before
+	     saving, because a link can come from anywhere. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.denlair.whenwillthebus.setup</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>whenwillthebus</string>
+			</array>
+		</dict>
+	</array>
+
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>

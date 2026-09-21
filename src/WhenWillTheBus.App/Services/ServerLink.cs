@@ -85,6 +85,31 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
         }
     }
 
+    /// <summary>Fetch the view the worker computed, or null if unreachable.</summary>
+    public async Task<string?> FetchStateAsync(CancellationToken cancellationToken = default)
+    {
+        (string Url, string Key)? server = await credentials.ReadServerAsync();
+        if (server is null)
+        {
+            return null;
+        }
+
+        using HttpRequestMessage request = new(HttpMethod.Get, $"{server.Value.Url}/rider/state");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", server.Value.Key);
+
+        try
+        {
+            using HttpResponseMessage response = await http.SendAsync(request, cancellationToken);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadAsStringAsync(cancellationToken)
+                : null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Check the worker is reachable and the key is accepted.</summary>
     public async Task<bool> CheckAsync(string url, string key, CancellationToken cancellationToken = default)
     {

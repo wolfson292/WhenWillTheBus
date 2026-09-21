@@ -2,6 +2,7 @@
 
 using WhenWillTheBus.App.Pages;
 using WhenWillTheBus.App.Services;
+using WhenWillTheBus.App.Services;
 
 namespace WhenWillTheBus.App;
 
@@ -14,6 +15,42 @@ public sealed class App : Application
     {
         _bus = bus;
         _services = services;
+
+        // A setup link only ever OFFERS a configuration. It is confirmed on
+        // screen before anything is saved, because a URL scheme can be opened by
+        // any app or web page and an arriving link proves nothing about who sent
+        // it.
+        SetupLink.Received += OnSetupLink;
+    }
+
+    private async void OnSetupLink(SetupLink.Details details)
+    {
+        Page? page = Windows.FirstOrDefault()?.Page;
+        if (page is null)
+        {
+            return;
+        }
+
+        bool accepted = await page.DisplayAlert(
+            "Use this worker?",
+            $"This link points the app at:\n\n{details.Url}\n\nIt also carries an access key. "
+            + "Only accept it from someone you trust.",
+            "Use it",
+            "Cancel");
+
+        if (!accepted)
+        {
+            return;
+        }
+
+        CredentialStore credentials = _services.GetRequiredService<CredentialStore>();
+        await credentials.SaveServerAsync(details.Url, details.Key);
+        await _bus.StartAsync();
+
+        await page.DisplayAlert(
+            "Saved",
+            _bus.Problem ?? "Connected to the worker.",
+            "OK");
     }
 
     protected override Window CreateWindow(IActivationState? activationState)

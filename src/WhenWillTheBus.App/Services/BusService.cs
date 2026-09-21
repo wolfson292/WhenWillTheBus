@@ -28,6 +28,7 @@ public sealed class BusService : INotifyPropertyChanged
     private CancellationTokenSource? _polling;
     private string? _activityJourneyId;
     private bool _testCard;
+    private bool _workerFed;
     private DateTimeOffset _scansPolledAt = DateTimeOffset.MinValue;
 
     private Student? _rider;
@@ -96,13 +97,26 @@ public sealed class BusService : INotifyPropertyChanged
     private async Task StartCoreAsync()
     {
         WheresTheBusCredentials? credentials = await _credentials.ReadAsync();
-        if (credentials is null)
+        (string Url, string Key)? worker = await _credentials.ReadServerAsync();
+
+        // WORKER-FED: no WheresTheBus account on this phone at all.
+        //
+        // The worker already polls, predicts and knows everything; a second
+        // phone doing the same work would put the family's password on another
+        // device and show the third-party API another poller, for no gain. So a
+        // phone with only a worker address renders what the worker computed.
+        _workerFed = credentials is null && worker is not null;
+
+        if (credentials is null && !_workerFed)
         {
-            Problem = "Sign in to see the bus.";
+            Problem = "Add a worker, or sign in to WheresTheBus.";
             return;
         }
 
-        _client ??= new WheresTheBusClient(_http, credentials);
+        if (!_workerFed)
+        {
+            _client ??= new WheresTheBusClient(_http, credentials!);
+        }
 
         await LoadHistoryAsync();
 
@@ -181,6 +195,12 @@ public sealed class BusService : INotifyPropertyChanged
     {
         DateTimeOffset now = _clock.Now;
 
+        if (_workerFed)
+        {
+            return await TickFromWorkerAsync(now, token);
+        }
+
+
         if (_students.Count == 0)
         {
             await RefreshRosterAsync(token);
@@ -235,6 +255,59 @@ public sealed class BusService : INotifyPropertyChanged
         // a reading could change, and the service belongs to somebody else.
         bool watched = _engine.IsWatching(rider, Run.Am, now) || _engine.IsWatching(rider, Run.Pm, now);
         return watched ? Tuning.BusPollInterval : Tuning.ScanPollInterval;
+    }
+
+    /// <summary>
+    /// Render what the worker computed, rather than computing it again.
+    /// </summary>
+    /// <remarks>
+    /// Everything downstream -- the Live Activity, the widget snapshot, the
+    /// screens -- is driven exactly as it is when this phone predicts for
+    /// itself. Only the source differs.
+    /// </remarks>
+    private async Task<TimeSpan> TickFromWorkerAsync(DateTimeOffset now, CancellationToken token)
+    {
+        string? json = await _server.FetchStateAsync(token);
+        if (json is null)
+        {
+            Problem = "Could not reach the worker. Check its address and key in Settings.";
+            return TimeSpan.FromMinutes(1);
+        }
+
+        IReadOnlyList<WorkerRider> riders;
+        try
+        {
+            riders = WorkerState.Parse(json);
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            Problem = "The worker answered with something unreadable.";
+            return TimeSpan.FromMinutes(1);
+        }
+
+        WorkerRider? first = riders.FirstOrDefault();
+        if (first is null)
+        {
+            Problem = "The worker has no riders yet.";
+            return Tuning.ScanPollInterval;
+        }
+
+        Problem = null;
+        Rider = first.Rider;
+        Latest = first.Reading;
+        Prediction = first.Prediction;
+        Journey = first.Journey;
+        School = first.School;
+
+        DriveLiveActivity(first.Rider, first.Journey, first.Prediction, first.Reading, now);
+        WidgetSnapshot.Write(first.Rider, first.Journey, first.Prediction, first.Reading, now);
+
+        // Follow the worker's own cadence: it polls at 30 seconds while a run is
+        // being watched and backs off otherwise, so matching it keeps this phone
+        // fresh without asking more often than there is anything new to hear.
+        return first.Journey.Active || first.Reading is not null
+            ? Tuning.BusPollInterval
+            : Tuning.ScanPollInterval;
     }
 
     /// <summary>

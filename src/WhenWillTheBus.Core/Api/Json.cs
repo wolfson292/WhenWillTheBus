@@ -16,7 +16,7 @@ namespace WhenWillTheBus.Core.Api;
 /// caller already has to handle, whereas an exception on a background poll
 /// means the app stops predicting for a child standing at a kerb.
 /// </remarks>
-internal static class Json
+public static class Json
 {
     public static JsonElement? Property(this JsonElement element, string name) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out JsonElement value)

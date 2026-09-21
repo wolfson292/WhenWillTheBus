@@ -57,6 +57,9 @@ public sealed class SignInPage : ContentPage
                     _serverUrl,
                     _serverKey,
                     Action("Save worker", OnSaveWorker),
+                    Action("Share a setup link", OnShareSetup),
+                    Note("Sends a link that configures another phone in one tap. It carries the "
+                        + "access key, so send it the way you would send a password."),
 
                     Heading("History"),
                     Note("Predictions work from two route samples, so a fortnight of history is "
@@ -132,6 +135,22 @@ public sealed class SignInPage : ContentPage
             ? "Worker saved, and it answered."
             : "Worker saved, but it did not answer. Check the address and key — the app still "
                 + "works while it is open.";
+    }
+
+    private async void OnShareSetup(object? sender, EventArgs e)
+    {
+        (string Url, string Key)? worker = await _credentials.ReadServerAsync();
+        if (worker is null)
+        {
+            _status.Text = "Save a worker first — there is nothing to share yet.";
+            return;
+        }
+
+        await Share.RequestAsync(new ShareTextRequest
+        {
+            Title = "Set up When Will The Bus",
+            Text = SetupLink.Build(worker.Value.Url, worker.Value.Key),
+        });
     }
 
     private async void OnSync(object? sender, EventArgs e)
