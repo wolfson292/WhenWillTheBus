@@ -39,6 +39,9 @@ public sealed class SignInPage : ContentPage
         Button import = new() { Text = "Import history from Home Assistant export" };
         import.Clicked += OnImport;
 
+        Button sync = new() { Text = "Sync history from the worker" };
+        sync.Clicked += OnSync;
+
         Content = new ScrollView
         {
             Content = new VerticalStackLayout
@@ -61,8 +64,12 @@ public sealed class SignInPage : ContentPage
                     Heading("History"),
                     Note(
                         "Predictions work from two route samples, so a fortnight of history makes "
-                        + "this useful on day one rather than in October. The export stays on this "
-                        + "device: it contains a child's real route."),
+                        + "this useful on day one rather than in October. History stays on this "
+                        + "device and the worker: it contains a child's real route."),
+                    sync,
+                    Note(
+                        "The worker watches every run; this phone only learns while the app is "
+                        + "open. Sync now and then, or its estimates fall behind."),
                     import,
 
                     new BoxView { HeightRequest = 8, Color = Colors.Transparent },
@@ -140,6 +147,19 @@ public sealed class SignInPage : ContentPage
         {
             _status.Text = $"That is not a WheresTheBus export: {error.Message}";
         }
+    }
+
+    private async void OnSync(object? sender, EventArgs e)
+    {
+        _status.Text = "Asking the worker...";
+        int held = await _bus.SyncHistoryFromWorkerAsync();
+
+        _status.Text = held switch
+        {
+            -1 => "Could not reach the worker. Check its address and key.",
+            0 => "The worker has not learned anything yet.",
+            _ => $"Synced. {held} arrival(s) held.",
+        };
     }
 
     private static Label Heading(string text) =>

@@ -55,6 +55,36 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
         }
     }
 
+    /// <summary>Fetch the history the worker has learned, or null if unavailable.</summary>
+    /// <remarks>
+    /// The worker is always on and the phone is not, so this is how the phone
+    /// catches up on runs it never saw. Merging is safe: the engine keys an
+    /// arrival by run and date and keeps whichever record knows more.
+    /// </remarks>
+    public async Task<string?> FetchHistoryAsync(CancellationToken cancellationToken = default)
+    {
+        (string Url, string Key)? server = await credentials.ReadServerAsync();
+        if (server is null)
+        {
+            return null;
+        }
+
+        using HttpRequestMessage request = new(HttpMethod.Get, $"{server.Value.Url}/history/export");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", server.Value.Key);
+
+        try
+        {
+            using HttpResponseMessage response = await http.SendAsync(request, cancellationToken);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadAsStringAsync(cancellationToken)
+                : null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Check the worker is reachable and the key is accepted.</summary>
     public async Task<bool> CheckAsync(string url, string key, CancellationToken cancellationToken = default)
     {

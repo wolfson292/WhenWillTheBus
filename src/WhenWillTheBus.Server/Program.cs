@@ -227,6 +227,24 @@ app.MapPost("/history/import", async (
     return Results.Ok(new { riders = loaded });
 });
 
+// Hand the phone what this worker has learned.
+//
+// Both run the same engine but keep separate copies, and only one of them is
+// always on: the worker watches every run, the phone learns only while somebody
+// has it open. Without this the phone's estimates fall steadily behind and
+// nothing says so -- they simply stop improving.
+//
+// This DOES carry route coordinates, so it sits behind the API key like
+// everything else, and goes only to a device that already has the credentials.
+app.MapGet("/history/export", (BusMonitor monitor, PredictionEngine engine) =>
+{
+    List<(long ChildId, IReadOnlyList<RunArrival> Arrivals)> riders = monitor.Students.Keys
+        .Select(childId => (childId, engine.ArrivalsFor(childId)))
+        .ToList();
+
+    return Results.Text(HistoryExport.ToBundle(riders), "application/json");
+});
+
 // What the worker knows, WITHOUT coordinates. A status page is a convenience;
 // leaking a child's position into one would not be.
 app.MapGet("/status", (BusMonitor monitor, PredictionEngine engine, LocalClock clock) =>

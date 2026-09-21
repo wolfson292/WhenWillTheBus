@@ -348,6 +348,16 @@ public sealed class BusService : INotifyPropertyChanged
                 Scans = _students[childId].Scans,
             }));
 
+    /// <summary>
+    /// Take whatever the worker has learned. Returns how many arrivals resulted,
+    /// or -1 when the worker could not be reached.
+    /// </summary>
+    public async Task<int> SyncHistoryFromWorkerAsync()
+    {
+        string? bundle = await _server.FetchHistoryAsync();
+        return bundle is null ? -1 : await ImportHistoryAsync(bundle);
+    }
+
     /// <summary>Import the bundle exported from the Home Assistant integration.</summary>
     /// <remarks>
     /// Predictions work from two route samples and three arrivals, so a fortnight
@@ -371,7 +381,11 @@ public sealed class BusService : INotifyPropertyChanged
             await SaveHistoryAsync();
         }
 
-        return imported;
+        // What is HELD after merging, not what arrived: an arrival already known
+        // is merged, not added, and reporting the raw count would overstate it.
+        return _students.Keys.Sum(childId => _engine.ArrivalsFor(childId).Count) is int held and > 0
+            ? held
+            : imported;
     }
 
     private void Set<T>(ref T field, T value, [CallerMemberName] string? name = null)
