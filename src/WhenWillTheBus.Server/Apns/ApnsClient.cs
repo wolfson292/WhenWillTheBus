@@ -74,16 +74,26 @@ public sealed class ApnsClient(
 
     /// <summary>End a Live Activity.</summary>
     /// <param name="dismissAt">
-    /// When to take the card away. Leaving the FINISHED state on screen for a
-    /// few minutes is deliberate: whatever was pushed last is what stands on the
-    /// phone, and ending mid-ride once left "riding home, 7 min" frozen there.
+    /// When to take the card away. Usually now: the stage machine has already
+    /// held the FINISHED state on screen for its dwell before the journey goes
+    /// idle, so the lingering has happened by the time this is called.
     /// </param>
+    /// <remarks>
+    /// Sent at PRIORITY 10, with no alert.
+    /// 
+    /// Priority 5 means "deliver when convenient", and on a locked idle phone
+    /// iOS will happily sit on it -- observed here as an end push that APNs
+    /// accepted with a 200 and that never took effect, leaving a finished card
+    /// on the Lock Screen. Ending is a state change the reader should see, so it
+    /// goes out promptly; attaching no alert is what keeps it from interrupting.
+    /// </remarks>
     public Task<PushResult> EndAsync(
         string deviceToken,
         ILiveActivityState contentState,
         DateTimeOffset? dismissAt = null,
         CancellationToken cancellationToken = default) =>
-        SendAsync(deviceToken, "end", contentState, PushUrgency.Passive, null, null, dismissAt, cancellationToken);
+        SendAsync(
+            deviceToken, "end", contentState, PushUrgency.TimeSensitive, null, null, dismissAt, cancellationToken);
 
     private async Task<PushResult> SendAsync(
         string deviceToken,

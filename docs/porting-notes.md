@@ -93,6 +93,25 @@ Two rules follow, and they apply to anything else crossing this boundary:
   `OnResume` are both async void, where an unhandled exception terminates the
   process instead of surfacing. `StartAsync` degrades to a message on screen.
 
+## APNs delivery is not APNs effect
+
+`200 OK` from APNs means Apple ACCEPTED the push. It does not mean iOS applied
+it, and it does not mean the widget could decode it. Two bugs here were
+invisible to the worker and obvious on the Lock Screen:
+
+- **An `end` push at `apns-priority: 5`** was accepted with a 200 and simply
+  never took effect, leaving a finished card up indefinitely. Priority 5 means
+  "deliver when convenient", and a locked idle phone is exactly when iOS decides
+  it is not convenient. Ending is a state change the reader should see, so it
+  goes at priority 10 — with no alert, which is what keeps it from interrupting.
+- **A `dismissal-date` a minute out** left the card lingering twice over. The
+  stage machine already holds the finished state for its dwell before the
+  journey reaches idle, so by the time an `end` is pushed the lingering has
+  happened. Dismiss immediately.
+
+The general lesson: verify a push by looking at the screen. The worker cannot
+tell you the truth here, and the failure it reports is a success.
+
 ## Known-unreachable defensive code
 
 `Statistics.RejectOutliers` refuses to discard every sample. With the MAD

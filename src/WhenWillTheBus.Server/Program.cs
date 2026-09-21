@@ -293,7 +293,7 @@ app.MapPost("/push/test", async (
     foreach (RegisteredActivity activity in activities)
     {
         PushResult result = ending
-            ? await apns.EndAsync(activity.PushToken, state, now.AddMinutes(1), token)
+            ? await apns.EndAsync(activity.PushToken, state, now, token)
             : await apns.UpdateAsync(
                 activity.PushToken,
                 state,
