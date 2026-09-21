@@ -47,11 +47,26 @@ public static partial class LiveActivityBridge
     [LibraryImport("__Internal")]
     private static partial void wwtb_set_token_callback(IntPtr callback);
 
+    [LibraryImport("__Internal")]
+    [return: MarshalAs(UnmanagedType.I1)]
+    private static partial bool wwtb_activity_has_push();
+
     /// <summary>
     /// Whether the user has Live Activities switched on for this app. A refusal
     /// here is the commonest reason a card never appears.
     /// </summary>
     public static bool Enabled => wwtb_activities_enabled();
+
+    /// <summary>
+    /// Whether the running activity can be updated by push.
+    /// </summary>
+    /// <remarks>
+    /// False means the card is local-only: correct while the app is running,
+    /// frozen the moment iOS suspends it. That is a real limitation to say out
+    /// loud — a countdown that silently stops advancing is worse than one that
+    /// admits it cannot.
+    /// </remarks>
+    public static bool HasPush => wwtb_activity_has_push();
 
     /// <summary>
     /// Be told when the activity's push token changes, so it can be re-registered

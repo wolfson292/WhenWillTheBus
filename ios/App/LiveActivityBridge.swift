@@ -17,6 +17,7 @@ import Foundation
 
 private var liveActivity: Any?
 private var tokenCallback: (@convention(c) (UnsafePointer<CChar>?) -> Void)?
+private var pushAvailable = false
 
 /// Whether the user has left Live Activities switched on for this app.
 ///
@@ -73,25 +74,53 @@ public func wwtb_start_activity(
         childId: childId
     )
 
-    do {
-        let activity = try Activity.request(
-            attributes: attributes,
-            content: .init(state: state, staleDate: Date().addingTimeInterval(15 * 60)),
-            pushType: .token
-        )
-        liveActivity = activity
+    let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(15 * 60))
 
+    // Ask for a push token first, and fall back to a purely local activity.
+    //
+    // Requesting .token needs the push entitlement, which needs the capability
+    // enabled on the App ID. Where that is missing this throws -- and treating
+    // that as fatal would mean NO card at all, when a locally updated one still
+    // works perfectly whenever the app is running. Degrading is strictly better
+    // than refusing: the parent gets a card on the lock screen either way, and
+    // it simply stops advancing once iOS suspends the app.
+    var activity: Activity<BusActivityAttributes>?
+
+    do {
+        activity = try Activity.request(attributes: attributes, content: content, pushType: .token)
+        pushAvailable = true
+    } catch {
+        do {
+            activity = try Activity.request(attributes: attributes, content: content, pushType: nil)
+            pushAvailable = false
+        } catch {
+            return false
+        }
+    }
+
+    guard let started = activity else { return false }
+    liveActivity = started
+
+    if pushAvailable {
         Task {
-            for await tokenData in activity.pushTokenUpdates {
+            for await tokenData in started.pushTokenUpdates {
                 let hex = tokenData.map { String(format: "%02x", $0) }.joined()
                 hex.withCString { tokenCallback?($0) }
             }
         }
-
-        return true
-    } catch {
-        return false
     }
+
+    return true
+}
+
+/// Whether the running activity can be updated by push.
+///
+/// False means the card is local-only: correct while the app is running, frozen
+/// once iOS suspends it. Worth surfacing rather than leaving a parent to wonder
+/// why the countdown stopped.
+@_cdecl("wwtb_activity_has_push")
+public func wwtb_activity_has_push() -> Bool {
+    pushAvailable
 }
 
 /// Update the running activity from the foreground.

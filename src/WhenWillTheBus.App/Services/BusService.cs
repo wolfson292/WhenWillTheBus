@@ -57,6 +57,13 @@ public sealed class BusService : INotifyPropertyChanged
     /// <summary>Whatever is currently stopping this working, in words a parent can act on.</summary>
     public string? Problem { get => _problem; private set => Set(ref _problem, value); }
 
+    /// <summary>
+    /// True when a Live Activity is running that nothing can update once the app
+    /// is suspended. Worth telling the reader: the card will simply stop.
+    /// </summary>
+    public bool LiveActivityIsLocalOnly =>
+        _activityJourneyId is not null && !LiveActivityBridge.HasPush;
+
     /// <summary>Where learned history lives: the app container, not iCloud.</summary>
     private static string HistoryPath =>
         Path.Combine(FileSystem.AppDataDirectory, "history.json");

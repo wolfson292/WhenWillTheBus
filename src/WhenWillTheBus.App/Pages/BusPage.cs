@@ -31,6 +31,7 @@ public sealed class BusPage : ContentPage
     private readonly Label _fix = new() { FontSize = 12, TextColor = Colors.Gray };
     private readonly Label _scans = new() { FontSize = 13, TextColor = Colors.Gray };
     private readonly Label _problem = new() { FontSize = 13, TextColor = Colors.OrangeRed, IsVisible = false };
+    private readonly Label _localOnly = new() { FontSize = 12, TextColor = Colors.DarkOrange, IsVisible = false };
 
     public BusPage(BusService bus, IServiceProvider services)
     {
@@ -55,6 +56,7 @@ public sealed class BusPage : ContentPage
                 Children =
                 {
                     _problem,
+                    _localOnly,
                     _stage,
                     _arrival,
                     _countdown,
@@ -87,6 +89,13 @@ public sealed class BusPage : ContentPage
     {
         _problem.Text = _bus.Problem;
         _problem.IsVisible = !string.IsNullOrEmpty(_bus.Problem);
+
+        // A card nothing can update once the app is suspended will simply stop
+        // advancing. Saying so beats leaving a parent to wonder why.
+        _localOnly.IsVisible = _bus.LiveActivityIsLocalOnly;
+        _localOnly.Text = _localOnly.IsVisible
+            ? "The Lock Screen card only updates while this app is open."
+            : string.Empty;
 
         Journey journey = _bus.Journey;
         ArrivalPrediction? prediction = _bus.Prediction;
