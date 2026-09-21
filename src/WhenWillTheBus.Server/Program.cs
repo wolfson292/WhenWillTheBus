@@ -8,6 +8,7 @@ using WhenWillTheBus.Core;
 using WhenWillTheBus.Core.Api;
 using WhenWillTheBus.Core.Model;
 using WhenWillTheBus.Core.Prediction;
+using WhenWillTheBus.Core.Storage;
 using WhenWillTheBus.Server.Apns;
 using WhenWillTheBus.Server.Devices;
 using WhenWillTheBus.Server.LiveActivity;
@@ -163,6 +164,67 @@ app.MapDelete("/activities/{pushToken}", async (
     registry.Forget(pushToken);
     await registry.SaveAsync(token);
     return Results.NoContent();
+});
+
+// Import a history export from the Home Assistant integration.
+//
+// Predictions work from two route samples, so a fortnight of this is the
+// difference between a useful estimate today and one in October. The phone
+// imports the same bundle through its own Settings screen; both run the same
+// engine and each keeps its own copy.
+//
+// childId overrides the id in the bundle. Not a convenience: a school can
+// reissue a child's id between terms, and history filed under the old one is
+// silently never used -- the estimates simply never improve and nothing says
+// why.
+app.MapPost("/history/import", async (
+    HttpRequest request,
+    PredictionEngine engine,
+    BusMonitor monitor,
+    CancellationToken token) =>
+{
+    using StreamReader reader = new(request.Body);
+    string json = await reader.ReadToEndAsync(token);
+
+    IReadOnlyList<ImportedRider> riders;
+    try
+    {
+        riders = HistoryImport.Parse(json);
+    }
+    catch (InvalidDataException error)
+    {
+        return Results.BadRequest(new { error = error.Message });
+    }
+
+    long? forced = long.TryParse(request.Query["childId"], out long only) ? only : null;
+    if (forced is not null && riders.Count > 1)
+    {
+        return Results.BadRequest(new
+        {
+            error = "childId can only be forced when the bundle holds exactly one rider.",
+        });
+    }
+
+    List<object> loaded = [];
+    foreach (ImportedRider rider in riders)
+    {
+        if (forced is null && !long.TryParse(rider.ChildId, out _))
+        {
+            continue;
+        }
+
+        long childId = forced ?? long.Parse(rider.ChildId);
+        engine.LoadHistory(childId, rider.Arrivals);
+        loaded.Add(new
+        {
+            childId,
+            imported = rider.Arrivals.Count,
+            kept = engine.ArrivalsFor(childId).Count,
+        });
+    }
+
+    await monitor.PersistAsync(token);
+    return Results.Ok(new { riders = loaded });
 });
 
 // What the worker knows, WITHOUT coordinates. A status page is a convenience;

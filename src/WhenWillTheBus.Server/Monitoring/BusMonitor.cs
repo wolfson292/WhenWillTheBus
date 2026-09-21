@@ -235,6 +235,9 @@ public sealed class BusMonitor(
         }
     }
 
+    /// <summary>Persist what has been learned. Public so an import can write through.</summary>
+    public Task PersistAsync(CancellationToken token = default) => SaveHistoryAsync(token);
+
     private async Task SaveHistoryAsync(CancellationToken token)
     {
         List<StoredRider> riders = _students.Keys

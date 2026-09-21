@@ -53,10 +53,10 @@ echo "==> Building $TAG on $HOST"
 
 "${SSH[@]}" "sudo docker image inspect $TAG --format '    built {{.Os}}/{{.Architecture}}  {{.Size}} bytes'"
 
-if [ "${1:-}" = "--restart" ]; then
-  echo "==> Restarting the stack"
-  "${SSH[@]}" "sudo docker restart whenwillthebus 2>/dev/null || echo '    (not running yet -- deploy the stack in Portainer)'"
-fi
-
 echo
-echo "Image is on $HOST. Deploy or redeploy the stack in Portainer."
+echo "Image is on $HOST."
+echo
+echo "NOW REDEPLOY THE STACK IN PORTAINER -- a plain restart is not enough."
+echo "\"docker restart\" reuses the running container, and a container is bound to"
+echo "the image it was CREATED from, so it keeps serving the old build while"
+echo "reporting healthy. Portainer's Redeploy recreates it."
