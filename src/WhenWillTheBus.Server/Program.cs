@@ -83,6 +83,10 @@ builder.Services.AddSingleton(provider =>
     return new WheresTheBusCredentials(options.Email, options.Password, options.DeviceId);
 });
 
+// The token provider is a SINGLETON while the client is transient: Apple
+// rate-limits provider-token regeneration, so the token must outlive a request.
+builder.Services.AddSingleton<ApnsTokenProvider>();
+
 // APNs requires HTTP/2.
 builder.Services.AddHttpClient<ApnsClient>(http =>
 {

@@ -50,22 +50,11 @@ public sealed record PushResult(bool Delivered, HttpStatusCode Status, string? R
 /// </remarks>
 public sealed class ApnsClient(
     HttpClient http,
+    ApnsTokenProvider tokens,
     IOptions<ApnsOptions> options,
     ILogger<ApnsClient> logger)
 {
-    /// <summary>
-    /// Apple rejects a token older than an hour and rejects regenerating one
-    /// more often than every twenty minutes. Fifty minutes sits clear of both.
-    /// </summary>
-    private static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(50);
-
     private readonly ApnsOptions _options = options.Value;
-    private readonly SemaphoreSlim _tokenLock = new(1, 1);
-    private readonly Lock _keyLock = new();
-
-    private ECDsa? _key;
-    private string? _token;
-    private DateTimeOffset _tokenIssued = DateTimeOffset.MinValue;
 
     /// <summary>Update a running Live Activity.</summary>
     /// <param name="deviceToken">The activity's push token, not the device's.</param>
@@ -118,7 +107,7 @@ public sealed class ApnsClient(
         };
 
         request.Headers.TryAddWithoutValidation(
-            "authorization", $"bearer {await AuthenticationTokenAsync(cancellationToken).ConfigureAwait(false)}");
+            "authorization", $"bearer {await tokens.TokenAsync(cancellationToken).ConfigureAwait(false)}");
         request.Headers.TryAddWithoutValidation("apns-topic", _options.LiveActivityTopic);
         request.Headers.TryAddWithoutValidation("apns-push-type", "liveactivity");
 
@@ -211,63 +200,4 @@ public sealed class ApnsClient(
 
         return Encoding.UTF8.GetString(stream.ToArray());
     }
-
-    /// <summary>The provider token, regenerated when it is old enough to need it.</summary>
-    private async Task<string> AuthenticationTokenAsync(CancellationToken cancellationToken)
-    {
-        if (_token is not null && DateTimeOffset.UtcNow - _tokenIssued < TokenLifetime)
-        {
-            return _token;
-        }
-
-        await _tokenLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (_token is not null && DateTimeOffset.UtcNow - _tokenIssued < TokenLifetime)
-            {
-                return _token;
-            }
-
-            DateTimeOffset issued = DateTimeOffset.UtcNow;
-            string header = ToBase64Url($$"""{"alg":"ES256","kid":"{{_options.KeyId}}"}""");
-            string claims = ToBase64Url($$"""{"iss":"{{_options.TeamId}}","iat":{{issued.ToUnixTimeSeconds()}}}""");
-            string signingInput = $"{header}.{claims}";
-
-            byte[] signature;
-            lock (_keyLock)
-            {
-                _key ??= LoadKey();
-
-                // SignData returns IEEE P1363 (r||s), which is exactly what JWS
-                // ES256 wants — no DER unwrapping needed.
-                signature = _key.SignData(
-                    Encoding.ASCII.GetBytes(signingInput), HashAlgorithmName.SHA256, DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
-            }
-
-            _token = $"{signingInput}.{ToBase64Url(signature)}";
-            _tokenIssued = issued;
-            return _token;
-        }
-        finally
-        {
-            _tokenLock.Release();
-        }
-    }
-
-    private ECDsa LoadKey()
-    {
-        string pem = _options.PrivateKeyPem
-            ?? (_options.PrivateKeyPath is not null && File.Exists(_options.PrivateKeyPath)
-                ? File.ReadAllText(_options.PrivateKeyPath)
-                : throw new InvalidOperationException(
-                    "No APNs signing key. Set Apns:PrivateKeyPath to a mounted .p8, or Apns:PrivateKeyPem as a secret."));
-
-        ECDsa key = ECDsa.Create();
-        key.ImportFromPem(pem);
-        return key;
-    }
-
-    private static string ToBase64Url(string value) => ToBase64Url(Encoding.UTF8.GetBytes(value));
-
-    private static string ToBase64Url(byte[] value) => Base64Url.EncodeToString(value);
 }
