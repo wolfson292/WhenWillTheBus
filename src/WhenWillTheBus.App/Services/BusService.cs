@@ -443,6 +443,86 @@ public sealed class BusService : INotifyPropertyChanged
         return "Test card ended.";
     }
 
+    /// <summary>
+    /// The recorded routes for a run, oldest journey first.
+    /// </summary>
+    /// <remarks>
+    /// This is the data the whole estimate rests on, and it is worth showing.
+    /// Distance to the stop is a lossy projection of a school run: the bus
+    /// serves other children, turns in cul-de-sacs, and spends much of the
+    /// journey moving AWAY from the stop while making perfect progress. Drawn
+    /// on a map, a bus that looks like it is going the wrong way is obviously
+    /// just following its route.
+    ///
+    /// Substitute buses are left out for the same reason the estimate ignores
+    /// them: a replacement vehicle runs its own path and would smear the shape.
+    /// </remarks>
+    public IReadOnlyList<IReadOnlyList<GeoPoint>> RoutesFor(Run run)
+    {
+        if (Rider is null)
+        {
+            return [];
+        }
+
+        return _engine.ArrivalsFor(Rider.ChildId)
+            .Where(arrival => arrival.Run == run && !arrival.Substitute && arrival.Track.Count > 1)
+            .Select(arrival => (IReadOnlyList<GeoPoint>)arrival.Track
+                .Select(point => new GeoPoint(point.Latitude, point.Longitude))
+                .ToList())
+            .ToList();
+    }
+
+    /// <summary>What has been learned about one run, for showing rather than predicting.</summary>
+    public sealed record RunHistory(
+        Run Run,
+        TimeOnly? Learned,
+        TimeOnly? Scheduled,
+        int Samples,
+        int? SpreadMinutes,
+        int Outliers,
+        IReadOnlyList<RunArrival> Arrivals);
+
+    /// <summary>
+    /// What this app has actually observed, per run.
+    /// </summary>
+    /// <remarks>
+    /// Worth surfacing because the gap between the timetable and reality is the
+    /// whole reason the estimate is better than the published one, and a parent
+    /// has no way to know that unless it is shown.
+    /// </remarks>
+    public IReadOnlyList<RunHistory> History()
+    {
+        if (Rider is null)
+        {
+            return [];
+        }
+
+        List<RunHistory> history = [];
+        IReadOnlyList<RunArrival> all = _engine.ArrivalsFor(Rider.ChildId);
+
+        foreach (Run run in (ReadOnlySpan<Run>)[Run.Am, Run.Pm])
+        {
+            (TimeOnly? learned, int samples, int? spread, int outliers) =
+                _engine.LearnedTime(Rider.ChildId, run);
+
+            history.Add(new RunHistory(
+                run,
+                learned,
+                Rider.ScheduledFor(run),
+                samples,
+                spread,
+                outliers,
+                all.Where(arrival => arrival.Run == run)
+                   .OrderByDescending(arrival => arrival.Arrival)
+                   .ToList()));
+        }
+
+        return history;
+    }
+
+    /// <summary>Which run the map should be showing: the one being predicted, else the clock's.</summary>
+    public Run ShownRun => Prediction?.Run ?? _clock.RunOf(_clock.Now);
+
     /// <summary>Import the bundle exported from the Home Assistant integration.</summary>
     /// <remarks>
     /// Predictions work from two route samples and three arrivals, so a fortnight

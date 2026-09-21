@@ -62,22 +62,53 @@ echo "    live activities $LIVE"
 [ "$LIVE" = "true" ] || { echo "error: NSSupportsLiveActivities is not set; the card will never start" >&2; exit 1; }
 
 if [ "${1:-}" = "--install" ]; then
-  # Retry briefly. A phone that locks, or CoreDevice reconnecting, makes the
-  # device vanish from this listing for a few seconds -- and failing the whole
-  # build over a blink that clears itself is worse than waiting for it.
+  # Read the JSON, not the text table.
+  #
+  # devicectl's human-readable table shifts its columns with the longest device
+  # name, so an awk field index is right until somebody renames a phone. The
+  # JSON names what it means: a device is usable when its tunnel is connected,
+  # whatever the table happens to look like. (provision.sh already did this.)
+  #
+  # Retried, because a phone that locks or a CoreDevice reconnect makes the
+  # device vanish for a few seconds, and failing a whole build over a blink that
+  # clears itself is worse than waiting for it.
   DEVICE=""
   for attempt in 1 2 3 4 5 6; do
-    DEVICE=$(xcrun devicectl list devices 2>/dev/null | awk '$0 !~ /simulated/ && /connected/ {print $3; exit}')
+    xcrun devicectl list devices --json-output /tmp/wwtb-devices.json >/dev/null 2>&1
+    DEVICE=$(python3 -c "
+import json
+try:
+    d = json.load(open('/tmp/wwtb-devices.json'))
+except Exception:
+    raise SystemExit
+paired = []
+for x in d.get('result', {}).get('devices', []):
+    hw = x.get('hardwareProperties', {})
+    conn = x.get('connectionProperties', {})
+    # PAIRED, not 'tunnel currently connected'. The tunnel flaps -- it drops
+    # whenever the phone locks and devicectl re-establishes it on demand, which
+    # is why a launch succeeds a second after a listing called it disconnected.
+    # Requiring the tunnel here failed builds against a perfectly usable phone.
+    if hw.get('serialNumber') and conn.get('pairingState') == 'paired':
+        paired.append(hw.get('udid'))
+        if conn.get('tunnelState') == 'connected':
+            print(hw.get('udid'))
+            break
+else:
+    if paired:
+        print(paired[0])
+" 2>/dev/null)
     [ -n "$DEVICE" ] && break
     [ "$attempt" = 1 ] && echo "    waiting for the device..."
     sleep 5
   done
 
   [ -n "$DEVICE" ] || {
-    echo "error: no physical device connected after 30s." >&2
-    echo "       Unlock the phone and check: xcrun devicectl list devices" >&2
+    echo "error: no paired physical device after 30s." >&2
+    echo "       Unlock the phone, then: xcrun devicectl list devices" >&2
     exit 1
   }
+
   echo "==> Installing on $DEVICE"
   xcrun devicectl device install app --device "$DEVICE" "$APP"
 fi

@@ -31,6 +31,7 @@ public static class MauiProgram
         builder.Services.AddTransient<BusPage>();
         builder.Services.AddTransient<MapPage>();
         builder.Services.AddTransient<ScansPage>();
+        builder.Services.AddTransient<HistoryPage>();
         builder.Services.AddTransient<SignInPage>();
 
         return builder.Build();

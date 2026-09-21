@@ -25,6 +25,7 @@ public sealed class App : Application
         tabs.Children.Add(Tab<BusPage>());
         tabs.Children.Add(Tab<MapPage>());
         tabs.Children.Add(Tab<ScansPage>());
+        tabs.Children.Add(Tab<HistoryPage>());
         tabs.Children.Add(Tab<SignInPage>());
 
         return new Window(tabs);

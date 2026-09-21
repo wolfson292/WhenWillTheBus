@@ -69,6 +69,9 @@ public sealed class MapPage : ContentPage
     {
         RiderInfo? info = _bus.Latest;
         _map.Pins.Clear();
+        _map.MapElements.Clear();
+
+        DrawRecordedRoutes();
 
         if (info is null)
         {
@@ -95,6 +98,48 @@ public sealed class MapPage : ContentPage
 
         _caption.Text = Caption(info);
         Frame(info);
+    }
+
+    /// <summary>
+    /// Draw every recorded journey for this run, faintly.
+    /// </summary>
+    /// <remarks>
+    /// Faint and overlapping ON PURPOSE. Each journey is drawn translucent, so
+    /// where they coincide the line darkens and the real route emerges from the
+    /// stack; where one journey wandered, it stays pale. That is a more honest
+    /// picture than an averaged line, which would draw a road the bus has never
+    /// actually taken.
+    ///
+    /// It also answers the question the estimate exists to answer. A bus heading
+    /// away from the stop looks broken as a dot and obvious as a dot on a route.
+    /// </remarks>
+    private void DrawRecordedRoutes()
+    {
+        IReadOnlyList<IReadOnlyList<GeoPoint>> routes = _bus.RoutesFor(_bus.ShownRun);
+        if (routes.Count == 0)
+        {
+            return;
+        }
+
+        // Thin enough that a dozen of them stack without becoming a smear, and
+        // faint enough that the bus marker stays the thing you look at.
+        double alpha = Math.Clamp(1.2 / routes.Count, 0.08, 0.35);
+
+        foreach (IReadOnlyList<GeoPoint> route in routes)
+        {
+            Polyline line = new()
+            {
+                StrokeColor = Color.FromRgba(0.0, 0.45, 0.9, alpha),
+                StrokeWidth = 6,
+            };
+
+            foreach (GeoPoint point in route)
+            {
+                line.Geopath.Add(new Location(point.Latitude, point.Longitude));
+            }
+
+            _map.MapElements.Add(line);
+        }
     }
 
     private void Add(string label, string address, GeoPoint at, PinType type) =>
@@ -145,6 +190,12 @@ public sealed class MapPage : ContentPage
     private string Caption(RiderInfo info)
     {
         List<string> parts = [];
+
+        int routes = _bus.RoutesFor(_bus.ShownRun).Count;
+        if (routes > 0)
+        {
+            parts.Add($"{routes} past {(routes == 1 ? "journey" : "journeys")} shown");
+        }
 
         if (info.DistanceMiles is double miles)
         {
