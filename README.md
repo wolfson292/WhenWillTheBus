@@ -114,17 +114,25 @@ script and hit **Redeploy**.
 
 Host, user and path come from `WWTB_HOST` / `WWTB_USER` / `WWTB_ROOT`.
 
-On the host:
+On the host (this one keeps each app's files under `/docker/<app>`):
 
 ```
-/opt/whenwillthebus/context/   build context (synced; disposable)
-/opt/whenwillthebus/data/      learned history  -> /data          MUST persist
-/opt/whenwillthebus/secrets/   AuthKey.p8       -> /run/secrets   read-only
+/docker/whenwillthebus/context/   build context (synced; disposable)
+/docker/whenwillthebus/data/      learned history  -> /data         MUST persist
+/docker/whenwillthebus/secrets/   AuthKey.p8       -> /run/secrets  read-only
 ```
+
+`data` and `secrets` are owned by **uid 1654**, the user inside the image. Owned
+by anyone else, the worker cannot write, so every arrival it learns is lost on
+restart — and nothing says so until the estimates quietly fail to improve.
 
 The secrets *directory* is mounted, not the `.p8` file. Bind-mounting a file
 that does not exist yet makes Docker create a **directory** with that name, and
-the failure that follows never mentions the mount.
+the failure that follows never mentions the mount. Install the key with:
+
+```bash
+./scripts/install-apns-key.sh ~/Downloads/AuthKey_XXXXXXXXXX.p8
+```
 
 ### Locally with compose
 

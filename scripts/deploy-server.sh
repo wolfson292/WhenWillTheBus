@@ -22,14 +22,19 @@ cd "$ROOT"
 
 HOST="${WWTB_HOST:-192.168.3.151}"
 USER="${WWTB_USER:-scottwolf}"
-REMOTE="${WWTB_ROOT:-/opt/whenwillthebus}"
+# This host keeps each app's files under /docker/<app>.
+REMOTE="${WWTB_ROOT:-/docker/whenwillthebus}"
 TAG="${WWTB_TAG:-whenwillthebus:1.0}"
 SSH=(ssh -o BatchMode=yes -o ConnectTimeout=10 "$USER@$HOST")
 
 echo "==> Target $USER@$HOST:$REMOTE"
 
+# The container runs as uid 1654, not root. data must be writable by it or the
+# learned history silently fails to persist; secrets must be readable by it.
 "${SSH[@]}" "sudo mkdir -p $REMOTE/context $REMOTE/data $REMOTE/secrets \
-  && sudo chown -R $USER:$USER $REMOTE && chmod 700 $REMOTE/secrets"
+  && sudo chown -R $USER:$USER $REMOTE/context \
+  && sudo chown -R 1654:1654 $REMOTE/data $REMOTE/secrets \
+  && sudo chmod 700 $REMOTE/secrets"
 
 # The build context must mirror the repository root, because the Dockerfile
 # refers to src/WhenWillTheBus.* -- it is the same file used locally, and having
