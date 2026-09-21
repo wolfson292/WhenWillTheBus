@@ -246,6 +246,77 @@ app.MapGet("/history/export", (BusMonitor monitor, PredictionEngine engine) =>
     return Results.Text(HistoryExport.ToBundle(riders), "application/json");
 });
 
+// Push to every Live Activity currently registered.
+//
+// /apns/check proves Apple accepts our credentials; this proves a push actually
+// reaches a phone and the widget can decode it. Together they cover the whole
+// channel, and neither needs a bus.
+//
+// The state sent differs visibly from what the app started with -- a different
+// stage, carrying an alert -- so "did it arrive" is answered by looking at the
+// Lock Screen rather than by reading a log.
+app.MapPost("/push/test", async (
+    DeviceRegistry registry,
+    ApnsClient apns,
+    LocalClock clock,
+    HttpRequest request,
+    CancellationToken token) =>
+{
+    IReadOnlyCollection<RegisteredActivity> activities = registry.All;
+    if (activities.Count == 0)
+    {
+        return Results.Ok(new
+        {
+            pushed = 0,
+            note = "No Live Activity is registered. Start one from the app's Settings first -- "
+                + "the phone has to create the activity before anything can push to it.",
+        });
+    }
+
+    bool ending = string.Equals(request.Query["end"], "true", StringComparison.OrdinalIgnoreCase);
+    DateTimeOffset now = clock.Now;
+
+    BusActivityState state = new()
+    {
+        Stage = ending ? JourneyStage.Home : JourneyStage.AtStop,
+        Target = now,
+        Progress = 100,
+        Basis = PredictionBasis.Route,
+        FixedAt = now,
+    };
+
+    List<object> results = [];
+    foreach (RegisteredActivity activity in activities)
+    {
+        PushResult result = ending
+            ? await apns.EndAsync(activity.PushToken, state, now.AddMinutes(1), token)
+            : await apns.UpdateAsync(
+                activity.PushToken,
+                state,
+                PushUrgency.TimeSensitive,
+                now.AddMinutes(10),
+                ("Test push", "If you can read this, the worker can reach your Lock Screen."),
+                token);
+
+        if (result.TokenIsDead)
+        {
+            registry.Forget(activity.PushToken);
+        }
+
+        results.Add(new
+        {
+            activity.JourneyId,
+            delivered = result.Delivered,
+            appleStatus = (int)result.Status,
+            appleReason = result.Reason,
+            tokenForgotten = result.TokenIsDead,
+        });
+    }
+
+    await registry.SaveAsync(token);
+    return Results.Ok(new { pushed = results.Count, ending, activities = results });
+});
+
 // Prove the APNs configuration without waiting for a school run.
 //
 // Everything about push is silent when it is wrong: a bad signing key, a

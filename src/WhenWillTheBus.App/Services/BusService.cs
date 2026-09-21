@@ -27,6 +27,7 @@ public sealed class BusService : INotifyPropertyChanged
     private readonly Dictionary<long, long> _lastServerTime = [];
     private CancellationTokenSource? _polling;
     private string? _activityJourneyId;
+    private bool _testCard;
     private DateTimeOffset _scansPolledAt = DateTimeOffset.MinValue;
 
     private Student? _rider;
@@ -246,6 +247,14 @@ public sealed class BusService : INotifyPropertyChanged
             return;
         }
 
+        // A test card is not a journey, and the next poll would otherwise end it
+        // a second after it appeared -- which looks exactly like a card that
+        // failed to start.
+        if (_testCard)
+        {
+            return;
+        }
+
         if (journey.Active && journey.JourneyId is string journeyId)
         {
             if (_activityJourneyId != journeyId)
@@ -356,6 +365,73 @@ public sealed class BusService : INotifyPropertyChanged
     {
         string? bundle = await _server.FetchHistoryAsync();
         return bundle is null ? -1 : await ImportHistoryAsync(bundle);
+    }
+
+    /// <summary>
+    /// Start a Live Activity that is not attached to a real journey, so the push
+    /// path can be proved without waiting for a school run.
+    /// </summary>
+    /// <remarks>
+    /// This is a REAL activity, started the same way and registered the same
+    /// way. A test that took a different path would prove nothing about the one
+    /// that matters.
+    /// </remarks>
+    public async Task<string> StartTestCardAsync()
+    {
+        if (!LiveActivityBridge.Enabled)
+        {
+            return "Live Activities are switched off for this app in iOS Settings.";
+        }
+
+        if (Rider is null)
+        {
+            return "Sign in first, so the card has a name to show.";
+        }
+
+        DateTimeOffset now = _clock.Now;
+        string journeyId = $"test-{_clock.ToLocal(now):yyyyMMdd-HHmmss}";
+
+        Journey pretend = new()
+        {
+            Stage = JourneyStage.ToStop,
+            Progress = 35,
+            Target = now.AddMinutes(8),
+            JourneyId = journeyId,
+        };
+
+        _testCard = true;
+        _activityJourneyId = journeyId;
+
+        if (!LiveActivityBridge.Start(journeyId, Rider.Name, Rider.ChildId, pretend, null, Latest, now))
+        {
+            _testCard = false;
+            _activityJourneyId = null;
+            return "iOS refused to start the activity.";
+        }
+
+        // The push token arrives asynchronously through the bridge callback, and
+        // that callback is what registers it with the worker. Give it a moment
+        // before reporting, so the answer reflects what actually happened.
+        await Task.Delay(TimeSpan.FromSeconds(3));
+
+        return LiveActivityBridge.HasPush
+            ? $"Card started ({journeyId}). Registering its push token with the worker."
+            : $"Card started ({journeyId}), but iOS issued no push token, so the worker "
+                + "cannot update it. Check the Push Notifications capability.";
+    }
+
+    /// <summary>Take the test card away and hand control back to real journeys.</summary>
+    public string EndTestCard()
+    {
+        if (!_testCard)
+        {
+            return "No test card is running.";
+        }
+
+        LiveActivityBridge.End(Journey.Idle, null, Latest, _clock.Now);
+        _testCard = false;
+        _activityJourneyId = null;
+        return "Test card ended.";
     }
 
     /// <summary>Import the bundle exported from the Home Assistant integration.</summary>
