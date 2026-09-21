@@ -5,11 +5,19 @@ obj/
 [Rr]elease/
 *.user
 
-# Secrets. Neither of these may ever be committed: the .p8 can push to every
-# device the app is installed on, and .env holds the account password.
+# Secrets. None of these may ever be committed: the .p8 can push notifications
+# to every device the app is installed on until it is revoked, and .env holds
+# the account password.
+#
+# keys/ is named explicitly as well as by extension. *.p8 already covers the
+# file, but a directory that exists to hold secrets should say so in here --
+# the next thing dropped in it may not be a .p8.
 .env
 secrets/
+keys/
 *.p8
+*.p12
+*.mobileprovision
 
 # Learned history. This contains REAL ROUTE COORDINATES -- a few miles of turns
 # can be matched against a road network and put back on the map, and it is a
