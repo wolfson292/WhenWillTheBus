@@ -78,7 +78,7 @@ Just re-run `xcodegen generate --spec ios/project.yml` afterwards, or edit
 ### Verifying it landed
 
 ```bash
-APP=$(xcrun simctl get_app_container booted com.example.whenwillthebus app)
+APP=$(xcrun simctl get_app_container booted com.denlair.whenwillthebus app)
 ls "$APP/PlugIns"                                                   # BusWidget.appex
 plutil -extract NSExtension.NSExtensionPointIdentifier raw "$APP/PlugIns/BusWidget.appex/Info.plist"
 plutil -extract NSSupportsLiveActivities raw "$APP/Info.plist"      # true
@@ -89,7 +89,7 @@ Two things iOS will not warn you about:
 - The directory is **`PlugIns`**, with that exact spelling. An extension anywhere
   else is not an error, it is simply never loaded.
 - The extension's bundle id must sit **under** the app's
-  (`com.example.whenwillthebus.BusWidget` under `com.example.whenwillthebus`).
+  (`com.denlair.whenwillthebus.BusWidget` under `com.denlair.whenwillthebus`).
   The build script checks both.
 
 ## 4. Push

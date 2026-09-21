@@ -132,7 +132,7 @@ dotnet build src/WhenWillTheBus.App
 xcrun simctl boot "iPhone 17 Pro"
 xcrun simctl install "iPhone 17 Pro" \
   src/WhenWillTheBus.App/bin/Debug/net10.0-ios/iossimulator-arm64/WhenWillTheBus.App.app
-xcrun simctl launch "iPhone 17 Pro" com.example.whenwillthebus
+xcrun simctl launch "iPhone 17 Pro" com.denlair.whenwillthebus
 ```
 
 The widget extension is generated from `ios/project.yml` by XcodeGen, so there

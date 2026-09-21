@@ -18,6 +18,6 @@
       scripts/build-widget.sh and update Apns__BundleId on the worker (or use
       scripts/print-config.sh, which reads this file).
     -->
-    <ApplicationId Condition="'$(ApplicationId)' == ''">com.example.whenwillthebus</ApplicationId>
+    <ApplicationId Condition="'$(ApplicationId)' == ''">com.denlair.whenwillthebus</ApplicationId>
   </PropertyGroup>
 </Project>
