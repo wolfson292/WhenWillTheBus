@@ -36,6 +36,12 @@ targets:
     sources:
       - path: LiveActivity
 
+    entitlements:
+      path: BusWidget/BusWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.${WWTB_BUNDLE_ID}
+
     info:
       path: BusWidget/Info.plist
       properties:
@@ -70,8 +76,21 @@ targets:
     platform: iOS
     sources:
       - path: Provisioning
+    # Declared HERE, not in the .entitlements file. XcodeGen regenerates that
+    # file from this spec on every run, so anything hand-written into it is
+    # silently replaced -- and what it grants decides which capabilities Xcode
+    # enables on the App ID, which decides what the app's profile carries.
+    #
+    # This stub stands in for the MAUI app, so it must claim exactly what the
+    # real app claims. A capability missing here is missing from the app's
+    # profile, and Xcode then strips the entitlement from the build without
+    # a word.
     entitlements:
       path: Provisioning/Host.entitlements
+      properties:
+        aps-environment: development
+        com.apple.security.application-groups:
+          - group.${WWTB_BUNDLE_ID}
     info:
       path: Provisioning/Info.plist
       properties:

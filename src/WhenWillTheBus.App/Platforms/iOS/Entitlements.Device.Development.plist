@@ -21,5 +21,14 @@
 	-->
 	<key>aps-environment</key>
 	<string>development</string>
+
+	<!-- The app and the widget extension share a container through this group,
+	     because a widget has no network and no engine: the app leaves it a
+	     snapshot to draw. Both sides must carry the same identifier, and it must
+	     exist on the App ID or the entitlement is silently stripped. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.denlair.whenwillthebus</string>
+	</array>
 </dict>
 </plist>

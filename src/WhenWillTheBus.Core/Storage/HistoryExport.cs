@@ -87,6 +87,16 @@ public static class HistoryExport
             writer.WriteNumber("stale", arrival.Stale);
             writer.WriteBoolean("replayed", arrival.Replayed);
 
+            if (arrival.ErrorAtFiveMinutes is int five)
+            {
+                writer.WriteNumber("error_5min", five);
+            }
+
+            if (arrival.ErrorAtArrival is int final)
+            {
+                writer.WriteNumber("error_final", final);
+            }
+
             if (arrival.Boarded is not null)
             {
                 writer.WriteString("boarded", arrival.Boarded.Value.ToString("O", CultureInfo.InvariantCulture));

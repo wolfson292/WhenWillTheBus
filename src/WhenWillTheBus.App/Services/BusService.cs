@@ -222,6 +222,10 @@ public sealed class BusService : INotifyPropertyChanged
 
         DriveLiveActivity(rider, journey, prediction, info, now);
 
+        // The home-screen widget cannot predict anything itself, so leave it the
+        // answer where it can find it.
+        WidgetSnapshot.Write(rider, journey, prediction, info, now);
+
         if (_engine.PromotePending(_students, now))
         {
             await SaveHistoryAsync();

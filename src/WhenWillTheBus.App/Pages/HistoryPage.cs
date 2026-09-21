@@ -71,6 +71,12 @@ public sealed class HistoryPage : ContentPage
                     $"From {run.Samples} arrival(s), spread over {spread} minute(s){outliers}."));
             }
 
+            View? accuracy = Accuracy(run.Arrivals);
+            if (accuracy is not null)
+            {
+                _body.Children.Add(accuracy);
+            }
+
             foreach (RunArrival arrival in run.Arrivals.Take(10))
             {
                 _body.Children.Add(Row(arrival));
@@ -81,6 +87,42 @@ public sealed class HistoryPage : ContentPage
                 _body.Children.Add(Note($"…and {run.Arrivals.Count - 10} older."));
             }
         }
+    }
+
+    /// <summary>
+    /// How close the estimate has actually been, five minutes out.
+    /// </summary>
+    /// <remarks>
+    /// Five minutes because that is when somebody decides to walk to the kerb.
+    /// The LATE side is reported separately and deliberately: an estimate that
+    /// runs early costs a few minutes waiting, and one that runs late means the
+    /// bus has already gone.
+    /// </remarks>
+    private static View? Accuracy(IReadOnlyList<RunArrival> arrivals)
+    {
+        List<int> scored = arrivals
+            .Where(arrival => arrival.ErrorAtFiveMinutes is not null)
+            .Select(arrival => arrival.ErrorAtFiveMinutes!.Value)
+            .ToList();
+
+        if (scored.Count == 0)
+        {
+            return null;
+        }
+
+        double typical = scored.Select(Math.Abs).Order().ElementAt(scored.Count / 2) / 60.0;
+        double worst = scored.Select(Math.Abs).Max() / 60.0;
+        int late = scored.Count(error => error > 60);
+
+        string text = $"Five minutes out, the estimate has been {typical:F1} min off typically, "
+            + $"{worst:F1} min at worst, over {scored.Count} scored run(s).";
+
+        if (late > 0)
+        {
+            text += $" {late} of those ran LATE by more than a minute.";
+        }
+
+        return new Label { Text = text, FontSize = 12, TextColor = Colors.Gray, Margin = new Thickness(0, 2, 0, 6) };
     }
 
     /// <summary>The learned time against the published one — the point of the page.</summary>
@@ -129,6 +171,13 @@ public sealed class HistoryPage : ContentPage
         if (arrival.Recedes > 0)
         {
             notes.Add($"{arrival.Recedes} recede(s)");
+        }
+
+        if (arrival.ErrorAtFiveMinutes is int error)
+        {
+            double minutes = Math.Abs(error) / 60.0;
+            string direction = error > 0 ? "late" : "early";
+            notes.Add(Math.Abs(error) < 30 ? "estimate spot on" : $"estimate {minutes:F1} min {direction}");
         }
 
         string tail = notes.Count > 0 ? $"   ({string.Join(", ", notes)})" : string.Empty;

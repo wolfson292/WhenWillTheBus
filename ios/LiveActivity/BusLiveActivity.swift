@@ -164,5 +164,6 @@ private struct FixAge: View {
 struct BusWidgetBundle: WidgetBundle {
     var body: some Widget {
         BusLiveActivity()
+        BusHomeWidget()
     }
 }

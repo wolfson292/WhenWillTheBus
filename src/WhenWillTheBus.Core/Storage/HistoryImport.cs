@@ -136,6 +136,10 @@ public static class HistoryImport
             // the arrival, and it survives the import so a later backfill knows
             // this one has already been read.
             Replayed = arrival.Bool("replayed"),
+
+            // Absent from a Home Assistant export, which never recorded it.
+            ErrorAtFiveMinutes = (int?)arrival.Long("error_5min"),
+            ErrorAtArrival = (int?)arrival.Long("error_final"),
         };
     }
 

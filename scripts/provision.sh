@@ -91,6 +91,31 @@ REGISTER
       exit 3
     fi
 
+    # Same shape as the device case: -allowProvisioningUpdates mints profiles
+    # but will not turn on certain capabilities, and the error names the
+    # entitlement rather than what to do about it.
+    if grep -q "doesn't match the entitlements file" "$ROOT/ios/build/provision.log"; then
+      MISSING=$(grep -o "value for the [a-zA-Z0-9.\-]* entitlement" "$ROOT/ios/build/provision.log" \
+        | head -1 | sed 's/value for the //; s/ entitlement//')
+      cat >&2 <<CAPABILITY
+
+The profile does not grant an entitlement the build asks for:
+
+  ${MISSING:-<see the log>}
+
+Xcode creates App IDs and mints profiles, but it will not enable every
+capability for you. Turn this one on for the App ID, then re-run:
+
+  https://developer.apple.com/account/resources/identifiers/list
+  -> $WWTB_BUNDLE_ID -> Capabilities
+
+For App Groups, also tick the group itself under Edit, and check it exists
+under Identifiers -> App Groups.
+
+CAPABILITY
+      exit 4
+    fi
+
     echo "error: provisioning failed. Last lines:" >&2
     grep -iE "error|does not (support|have)|capability" "$ROOT/ios/build/provision.log" | sort -u | tail -10 >&2
     exit 1

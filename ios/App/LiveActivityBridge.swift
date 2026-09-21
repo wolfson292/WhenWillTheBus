@@ -14,6 +14,7 @@
 
 import ActivityKit
 import Foundation
+import WidgetKit
 
 private var liveActivity: Any?
 private var tokenCallback: (@convention(c) (UnsafePointer<CChar>?) -> Void)?
@@ -181,4 +182,16 @@ private func decodeState(_ json: UnsafePointer<CChar>) -> BusActivityAttributes.
     let text = String(cString: json)
     guard let data = text.data(using: .utf8) else { return nil }
     return try? JSONDecoder().decode(BusActivityAttributes.ContentState.self, from: data)
+}
+
+/// Ask WidgetKit to redraw the home-screen widget.
+///
+/// Called after the app writes a fresh snapshot. Without it the widget waits
+/// for its own timeline to come round, which is up to fifteen minutes of showing
+/// a number the app already knows is wrong.
+@_cdecl("wwtb_reload_widgets")
+public func wwtb_reload_widgets() {
+    if #available(iOS 14.0, *) {
+        WidgetCenter.shared.reloadAllTimelines()
+    }
 }

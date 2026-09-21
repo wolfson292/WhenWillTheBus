@@ -32,6 +32,19 @@ public sealed class PredictionEngine(LocalClock clock)
     private readonly Dictionary<(long ChildId, Run Run), (TimeOnly Earliest, TimeOnly Latest)> _bounds = [];
     private readonly Dictionary<long, RiderInfo> _latest = [];
 
+    /// <summary>
+    /// What was predicted, and when, for each run being watched.
+    /// </summary>
+    /// <remarks>
+    /// Kept so an arrival can record how wrong the estimate was, which is the
+    /// only way to know whether this port behaves like the one it replaces.
+    /// Bounded: an approach is watched for about 75 minutes at 30-second polls,
+    /// so a couple of hundred entries is the whole of it.
+    /// </remarks>
+    private readonly Dictionary<RunKey, List<(DateTimeOffset At, DateTimeOffset Predicted)>> _predicted = [];
+
+    private const int PredictionLogLimit = 256;
+
     public LocalClock Clock { get; } = clock;
 
     /// <summary>Every arrival learned for a rider, oldest first.</summary>
@@ -296,7 +309,74 @@ public sealed class PredictionEngine(LocalClock clock)
         }
 
         ArrivalPrediction soonest = candidates.MinBy(candidate => candidate.Arrival)!;
-        return Steady(student.ChildId, soonest);
+        ArrivalPrediction published = Steady(student.ChildId, soonest);
+
+        Remember(student.ChildId, published, now);
+        return published;
+    }
+
+    /// <summary>Note what was published, so the arrival can be scored against it.</summary>
+    private void Remember(long childId, ArrivalPrediction published, DateTimeOffset now)
+    {
+        // Only while the prediction is about today. Once it rolls on to the next
+        // school day it says nothing about the run being watched.
+        if (Clock.DateOf(published.Arrival) != Clock.DateOf(now))
+        {
+            return;
+        }
+
+        RunKey key = new(childId, published.Run, Clock.DateOf(now));
+        if (!_predicted.TryGetValue(key, out List<(DateTimeOffset At, DateTimeOffset Predicted)>? log))
+        {
+            log = [];
+            _predicted[key] = log;
+        }
+
+        log.Add((now, published.Arrival));
+
+        if (log.Count > PredictionLogLimit)
+        {
+            log.RemoveRange(0, log.Count - PredictionLogLimit);
+        }
+    }
+
+    /// <summary>
+    /// How wrong the estimate was, scored against an arrival that has happened.
+    /// </summary>
+    /// <remarks>
+    /// Scored at the moment a parent would act on it, not at the moment it was
+    /// most accurate. Reporting the best number the estimate ever produced would
+    /// flatter it; five minutes out is when somebody decides to walk to the kerb.
+    /// </remarks>
+    private (int? AtFiveMinutes, int? AtArrival) Score(RunKey key, DateTimeOffset arrival)
+    {
+        if (!_predicted.TryGetValue(key, out List<(DateTimeOffset At, DateTimeOffset Predicted)>? log)
+            || log.Count == 0)
+        {
+            return (null, null);
+        }
+
+        List<(DateTimeOffset At, DateTimeOffset Predicted)> before =
+            log.Where(entry => entry.At <= arrival).ToList();
+
+        if (before.Count == 0)
+        {
+            return (null, null);
+        }
+
+        int? final = (int)(before[^1].Predicted - arrival).TotalSeconds;
+
+        // The last estimate standing at least five minutes out. Not the nearest
+        // to that instant in either direction: one published four minutes before
+        // arrival knows things a parent leaving at five minutes did not.
+        DateTimeOffset horizon = arrival.AddMinutes(-5);
+        (DateTimeOffset At, DateTimeOffset Predicted)? atFive = before
+            .Where(entry => entry.At <= horizon)
+            .Cast<(DateTimeOffset At, DateTimeOffset Predicted)?>()
+            .LastOrDefault();
+
+        int? five = atFive is null ? null : (int)(atFive.Value.Predicted - arrival).TotalSeconds;
+        return (five, final);
     }
 
     private readonly record struct RouteEstimate(
@@ -699,6 +779,9 @@ public sealed class PredictionEngine(LocalClock clock)
             (IReadOnlyDictionary<int, int> legs, IReadOnlyList<TrackPoint> track, int recedes, int stale) =
                 approach.Finish(pending.When);
 
+            (int? errorAtFive, int? errorAtArrival) = Score(key, pending.When);
+            _predicted.Remove(key);
+
             List<RunArrival> history = _arrivals.TryGetValue(key.ChildId, out List<RunArrival>? existing)
                 ? existing
                 : [];
@@ -714,6 +797,8 @@ public sealed class PredictionEngine(LocalClock clock)
                 Recedes = recedes,
                 Stale = stale,
                 Boarded = BoardingFor(student, key.Run, key.Day),
+                ErrorAtFiveMinutes = errorAtFive,
+                ErrorAtArrival = errorAtArrival,
             });
 
             history.Sort((left, right) => left.Arrival.CompareTo(right.Arrival));

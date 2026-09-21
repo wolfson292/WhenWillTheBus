@@ -150,6 +150,18 @@ public static class HistoryStore
             writer.WriteNumber("stale", arrival.Stale);
             writer.WriteBoolean("replayed", arrival.Replayed);
 
+            // How wrong the estimate was. Kept so accuracy can be judged over a
+            // term rather than remembered anecdotally.
+            if (arrival.ErrorAtFiveMinutes is int five)
+            {
+                writer.WriteNumber("error_5min", five);
+            }
+
+            if (arrival.ErrorAtArrival is int final)
+            {
+                writer.WriteNumber("error_final", final);
+            }
+
             if (arrival.Boarded is not null)
             {
                 writer.WriteString("boarded", arrival.Boarded.Value.ToString("O", CultureInfo.InvariantCulture));
@@ -251,6 +263,8 @@ public static class HistoryStore
                 Stale = (int)(item.Long("stale") ?? 0),
                 Replayed = item.Bool("replayed"),
                 Boarded = TryInstant(item.String("boarded"), out DateTimeOffset boarded) ? boarded : null,
+                ErrorAtFiveMinutes = (int?)item.Long("error_5min"),
+                ErrorAtArrival = (int?)item.Long("error_final"),
             });
         }
 

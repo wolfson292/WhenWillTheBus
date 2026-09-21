@@ -63,6 +63,28 @@ public sealed record RunArrival
     public bool Replayed { get; init; }
 
     /// <summary>
+    /// How wrong the estimate was five minutes before the bus actually arrived,
+    /// in seconds. Positive means the estimate was LATE -- it said the bus would
+    /// come after it did.
+    /// </summary>
+    /// <remarks>
+    /// Five minutes because that is the horizon that matters: it is when a
+    /// parent decides whether to walk out of the door. The reference
+    /// implementation measured worst case 1.19 minutes out over this window, and
+    /// there is no way to know whether this port matches without recording it.
+    ///
+    /// Null where nothing was predicted that close to the arrival -- a run that
+    /// was never watched, or one replayed from history.
+    /// </remarks>
+    public int? ErrorAtFiveMinutes { get; init; }
+
+    /// <summary>
+    /// How wrong the LAST estimate before arrival was, in seconds. Positive
+    /// means late.
+    /// </summary>
+    public int? ErrorAtArrival { get; init; }
+
+    /// <summary>
     /// How much this record knows, for deciding which of two records of the
     /// same arrival to keep.
     /// </summary>
