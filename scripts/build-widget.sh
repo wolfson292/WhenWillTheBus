@@ -17,6 +17,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DESTINATION="${1:-simulator}"
 HOST_CONFIG="${2:-Debug}"
 
+# One source of truth, so the app, the extension and the worker's APNs topic
+# cannot drift apart. See Directory.Build.props.
+WWTB_BUNDLE_ID=$(sed -n 's/.*<ApplicationId[^>]*>\([^<]*\)<.*/\1/p' "$ROOT/Directory.Build.props" | head -1)
+[ -n "$WWTB_BUNDLE_ID" ] || { echo "error: no ApplicationId in Directory.Build.props" >&2; exit 1; }
+export WWTB_BUNDLE_ID
+
 if [ "$DESTINATION" = "device" ]; then
   SDK="iphoneos"
   RID="ios-arm64"

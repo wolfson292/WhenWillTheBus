@@ -16,15 +16,33 @@
 
     <ApplicationTitle>When Will The Bus</ApplicationTitle>
 
-    <!-- Must match Apns:BundleId on the server, and the widget extension's
-         parent bundle id. A mismatch is a push Apple silently drops. -->
-    <ApplicationId>com.example.whenwillthebus</ApplicationId>
+    <!-- ApplicationId comes from Directory.Build.props at the repository root,
+         which is the single place it is defined. -->
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
 
     <!-- ActivityKit needs 16.2; Live Activities are the reason for this app. -->
     <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
 
+  </PropertyGroup>
+
+  <!-- The push entitlement, without which ActivityKit never issues an activity
+       push token and the worker can never update a suspended card. Development
+       and production APNs are different environments: a token from one is
+       rejected outright by the other, and the rejection is silent. -->
+  <!-- DEVICE BUILDS ONLY. The simulator neither needs nor can sign entitlements,
+       and asking it to turns a working simulator build into "No valid iOS code
+       signing keys found in keychain".
+       
+       These are deliberately NOT called Entitlements.plist: the iOS SDK picks
+       that name up by convention and applies it to every build, including the
+       simulator, whatever conditions you write. Naming them otherwise is what
+       keeps this a choice rather than a default. -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'ios-arm64' And '$(Configuration)' == 'Debug'">
+    <CodesignEntitlements>Platforms/iOS/Entitlements.Device.Debug.plist</CodesignEntitlements>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' == 'ios-arm64' And '$(Configuration)' != 'Debug'">
+    <CodesignEntitlements>Platforms/iOS/Entitlements.Device.Release.plist</CodesignEntitlements>
   </PropertyGroup>
 
   <ItemGroup>

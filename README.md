@@ -137,8 +137,11 @@ xcrun simctl launch "iPhone 17 Pro" com.example.whenwillthebus
 
 The widget extension is generated from `ios/project.yml` by XcodeGen, so there
 is no hand-clicked Xcode project to keep in step — see
-[docs/ios-build.md](docs/ios-build.md). Live Activities do not run in the
-simulator in any useful way, so the card itself still needs a device.
+[docs/ios-build.md](docs/ios-build.md).
+
+Live Activities do not run in the simulator in any useful way, so the card
+itself needs a real iPhone: **[docs/device-setup.md](docs/device-setup.md)** is
+the eight-step checklist, four steps of which are scripted.
 
 ---
 

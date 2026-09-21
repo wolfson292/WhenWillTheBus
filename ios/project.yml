@@ -14,7 +14,7 @@
 name: WhenWillTheBusWidget
 
 options:
-  bundleIdPrefix: com.example.whenwillthebus
+  bundleIdPrefix: ${WWTB_BUNDLE_ID}
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
@@ -46,7 +46,7 @@ targets:
 
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.whenwillthebus.BusWidget
+        PRODUCT_BUNDLE_IDENTIFIER: ${WWTB_BUNDLE_ID}.BusWidget
         PRODUCT_NAME: BusWidget
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"

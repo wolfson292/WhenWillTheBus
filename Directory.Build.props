@@ -1,0 +1,23 @@
+<Project>
+  <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
+  <PropertyGroup>
+    <!--
+      THE bundle identifier. Everything derives from this one value:
+
+        - the iOS app                    $(ApplicationId)
+        - the widget extension           $(ApplicationId).BusWidget
+        - the APNs topic the worker uses $(ApplicationId).push-type.liveactivity
+
+      It is here, alone, because a mismatch between any two of those does not
+      fail loudly. A wrong APNs topic is a push Apple ACCEPTS and silently drops;
+      an extension id not nested under the app's is an install rejection whose
+      message does not mention bundle ids. Both cost an evening to find.
+
+      Change it to something your Apple Developer team owns, then re-run
+      scripts/build-widget.sh and update Apns__BundleId on the worker (or use
+      scripts/print-config.sh, which reads this file).
+    -->
+    <ApplicationId Condition="'$(ApplicationId)' == ''">com.example.whenwillthebus</ApplicationId>
+  </PropertyGroup>
+</Project>

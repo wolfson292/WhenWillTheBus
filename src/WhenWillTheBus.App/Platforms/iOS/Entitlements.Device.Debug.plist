@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Required for Live Activity PUSH updates.
+
+	  ActivityKit will hand out an activity push token only if the app carries
+	  the push entitlement. Without this the activity still starts and still
+	  updates while the app is in the foreground, so everything looks fine on
+	  the bench - and then the card freezes the moment iOS suspends the app,
+	  because the worker never had a token to push to. There is no error
+	  anywhere in that story.
+
+	  'development' is correct for builds run from Xcode and for a device
+	  provisioned for development, and it pairs with Apns__UseSandbox=true on
+	  the worker. TestFlight and the App Store need 'production' against the
+	  production APNs host; a token from one environment is rejected outright by
+	  the other, as a silent non-delivery.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
