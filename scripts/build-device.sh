@@ -62,8 +62,22 @@ echo "    live activities $LIVE"
 [ "$LIVE" = "true" ] || { echo "error: NSSupportsLiveActivities is not set; the card will never start" >&2; exit 1; }
 
 if [ "${1:-}" = "--install" ]; then
-  DEVICE=$(xcrun devicectl list devices 2>/dev/null | awk '$0 !~ /simulated/ && /connected/ {print $3; exit}')
-  [ -n "$DEVICE" ] || { echo "error: no physical device connected" >&2; exit 1; }
+  # Retry briefly. A phone that locks, or CoreDevice reconnecting, makes the
+  # device vanish from this listing for a few seconds -- and failing the whole
+  # build over a blink that clears itself is worse than waiting for it.
+  DEVICE=""
+  for attempt in 1 2 3 4 5 6; do
+    DEVICE=$(xcrun devicectl list devices 2>/dev/null | awk '$0 !~ /simulated/ && /connected/ {print $3; exit}')
+    [ -n "$DEVICE" ] && break
+    [ "$attempt" = 1 ] && echo "    waiting for the device..."
+    sleep 5
+  done
+
+  [ -n "$DEVICE" ] || {
+    echo "error: no physical device connected after 30s." >&2
+    echo "       Unlock the phone and check: xcrun devicectl list devices" >&2
+    exit 1
+  }
   echo "==> Installing on $DEVICE"
   xcrun devicectl device install app --device "$DEVICE" "$APP"
 fi

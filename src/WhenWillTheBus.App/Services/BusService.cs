@@ -34,6 +34,7 @@ public sealed class BusService : INotifyPropertyChanged
     private ArrivalPrediction? _prediction;
     private Journey _journey = Journey.Idle;
     private RiderInfo? _latest;
+    private SchoolArrival? _school;
     private string? _problem;
 
     public BusService(CredentialStore credentials, ServerLink server, HttpClient http)
@@ -54,6 +55,9 @@ public sealed class BusService : INotifyPropertyChanged
     public Journey Journey { get => _journey; private set => Set(ref _journey, value); }
 
     public RiderInfo? Latest { get => _latest; private set => Set(ref _latest, value); }
+
+    /// <summary>When the morning ride is expected to reach school, once learned.</summary>
+    public SchoolArrival? School { get => _school; private set => Set(ref _school, value); }
 
     /// <summary>Whatever is currently stopping this working, in words a parent can act on.</summary>
     public string? Problem { get => _problem; private set => Set(ref _problem, value); }
@@ -204,9 +208,14 @@ public sealed class BusService : INotifyPropertyChanged
         _engine.Observe(rider, info, now);
 
         ArrivalPrediction? prediction = _engine.PredictNextArrival(rider, now);
-        Journey journey = _engine.Stage(rider, now, prediction, schoolArrival: null);
+
+        // The morning stage needs a target or it cannot fire at all -- see the
+        // same call in the worker.
+        SchoolArrival? school = SchoolArrivalPredictor.Predict(rider, now, _clock);
+        Journey journey = _engine.Stage(rider, now, prediction, school?.Arrival);
 
         Latest = info;
+        School = school;
         Prediction = prediction;
         Journey = journey;
         Rider = rider;

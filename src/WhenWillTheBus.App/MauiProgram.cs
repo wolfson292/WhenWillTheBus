@@ -14,6 +14,7 @@ public static class MauiProgram
 
         builder
             .UseMauiApp<App>()
+            .UseMauiMaps()
             .ConfigureFonts(fonts => fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular"));
 
         // Our client follows the login's 307 to the account shard itself, so the
@@ -28,6 +29,8 @@ public static class MauiProgram
         builder.Services.AddSingleton<ServerLink>();
         builder.Services.AddSingleton<BusService>();
         builder.Services.AddTransient<BusPage>();
+        builder.Services.AddTransient<MapPage>();
+        builder.Services.AddTransient<ScansPage>();
         builder.Services.AddTransient<SignInPage>();
 
         return builder.Build();

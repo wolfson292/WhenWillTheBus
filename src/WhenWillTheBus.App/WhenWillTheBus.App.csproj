@@ -52,6 +52,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.20" />
+
+    <!-- MapKit on iOS, so no API key is needed. Android would want one. -->
+    <PackageReference Include="Microsoft.Maui.Controls.Maps" Version="10.0.20" />
   </ItemGroup>
 
   <ItemGroup>

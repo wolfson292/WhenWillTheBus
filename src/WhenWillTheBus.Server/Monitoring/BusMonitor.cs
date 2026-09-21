@@ -160,7 +160,12 @@ public sealed class BusMonitor(
             engine.Observe(student, info, now);
 
             ArrivalPrediction? prediction = engine.PredictNextArrival(student, now);
-            Journey journey = engine.Stage(student, now, prediction, schoolArrival: null);
+
+            // The morning stage needs a target or it cannot fire at all: §5's
+            // rule 3 requires one, so without this the bar never fills between
+            // boarding and the classroom.
+            SchoolArrival? school = SchoolArrivalPredictor.Predict(student, now, clock);
+            Journey journey = engine.Stage(student, now, prediction, school?.Arrival);
 
             await publisher
                 .PublishAsync(student, journey, prediction, info, now, token)

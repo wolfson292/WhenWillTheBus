@@ -30,6 +30,8 @@ public sealed class BusPage : ContentPage
     private readonly Label _confidence = new() { FontSize = 12, TextColor = Colors.Gray };
     private readonly Label _fix = new() { FontSize = 12, TextColor = Colors.Gray };
     private readonly Label _scans = new() { FontSize = 13, TextColor = Colors.Gray };
+    private readonly Label _school = new() { FontSize = 13, TextColor = Colors.Gray };
+    private readonly Label _rider = new() { FontSize = 12, TextColor = Colors.Gray };
     private readonly Label _problem = new() { FontSize = 13, TextColor = Colors.OrangeRed, IsVisible = false };
     private readonly Label _localOnly = new() { FontSize = 12, TextColor = Colors.DarkOrange, IsVisible = false };
 
@@ -38,15 +40,8 @@ public sealed class BusPage : ContentPage
         _bus = bus;
         _services = services;
 
-        Title = "When Will The Bus";
+        Title = "Bus";
         Padding = new Thickness(20, 16);
-
-        ToolbarItems.Add(new ToolbarItem
-        {
-            Text = "Settings",
-            Command = new Command(async () =>
-                await Navigation.PushAsync(_services.GetRequiredService<SignInPage>())),
-        });
 
         Content = new ScrollView
         {
@@ -68,6 +63,9 @@ public sealed class BusPage : ContentPage
                     _confidence,
                     _fix,
                     _scans,
+                    _school,
+                    new BoxView { HeightRequest = 6, Color = Colors.Transparent },
+                    _rider,
                 },
             },
         };
@@ -110,6 +108,8 @@ public sealed class BusPage : ContentPage
             _distance.Text = string.Empty;
             _fix.Text = string.Empty;
             _scans.Text = string.Empty;
+            _school.Text = string.Empty;
+            _rider.Text = RiderSummary(_bus.Rider);
             return;
         }
 
@@ -147,6 +147,63 @@ public sealed class BusPage : ContentPage
             : string.Empty;
 
         _scans.Text = ScanSummary(_bus.Rider);
+        _school.Text = SchoolSummary();
+        _rider.Text = RiderSummary(_bus.Rider);
+    }
+
+    /// <summary>When the morning ride is expected to reach school.</summary>
+    private string SchoolSummary()
+    {
+        if (_bus.School is not { } school)
+        {
+            return string.Empty;
+        }
+
+        string ride = school.RideMinutes is int minutes ? $", about a {minutes} min ride" : string.Empty;
+        return $"At school around {school.Arrival.ToLocalTime():h:mm tt}{ride} "
+            + $"(from {school.Samples} drop-off scan(s)).";
+    }
+
+    /// <summary>The unchanging facts, small and last: bus, school, timetable.</summary>
+    private static string RiderSummary(Student? rider)
+    {
+        if (rider is null)
+        {
+            return string.Empty;
+        }
+
+        List<string> parts = [];
+
+        if (rider.BusNumber is { Length: > 0 } bus)
+        {
+            parts.Add($"Bus {bus}");
+        }
+
+        if (rider.SchoolName is { Length: > 0 } school)
+        {
+            parts.Add(school);
+        }
+
+        // The published timetable, shown because it is what the estimate is
+        // measured AGAINST -- the afternoon one here reads nearly half an hour
+        // later than the bus actually comes.
+        List<string> timetable = [];
+        if (rider.AmScheduled is TimeOnly morning)
+        {
+            timetable.Add($"AM {morning:h:mm tt}");
+        }
+
+        if (rider.PmScheduled is TimeOnly afternoon)
+        {
+            timetable.Add($"PM {afternoon:h:mm tt}");
+        }
+
+        if (timetable.Count > 0)
+        {
+            parts.Add($"timetable {string.Join(" / ", timetable)}");
+        }
+
+        return string.Join("  ·  ", parts);
     }
 
     /// <summary>Show or hide everything that only means something with an estimate.</summary>
@@ -157,6 +214,7 @@ public sealed class BusPage : ContentPage
         _band.IsVisible = visible;
         _progress.IsVisible = visible;
         _confidence.IsVisible = visible;
+        _school.IsVisible = visible;
     }
 
     private static string StageTitle(JourneyStage stage, string? name)

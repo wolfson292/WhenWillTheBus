@@ -16,8 +16,26 @@ public sealed class App : Application
         _services = services;
     }
 
-    protected override Window CreateWindow(IActivationState? activationState) =>
-        new(new NavigationPage(_services.GetRequiredService<BusPage>()));
+    protected override Window CreateWindow(IActivationState? activationState)
+    {
+        // Four tabs rather than one screen with a Settings button. The bus is
+        // what you open the app for, so it stays first and stays uncluttered;
+        // the map, the scans and the settings are each a place to go looking.
+        TabbedPage tabs = new();
+        tabs.Children.Add(Tab<BusPage>());
+        tabs.Children.Add(Tab<MapPage>());
+        tabs.Children.Add(Tab<ScansPage>());
+        tabs.Children.Add(Tab<SignInPage>());
+
+        return new Window(tabs);
+    }
+
+    private NavigationPage Tab<TPage>()
+        where TPage : Page
+    {
+        Page page = _services.GetRequiredService<TPage>();
+        return new NavigationPage(page) { Title = page.Title };
+    }
 
     /// <summary>
     /// Stop polling when the app leaves the foreground.
