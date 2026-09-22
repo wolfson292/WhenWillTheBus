@@ -390,6 +390,12 @@ app.MapPost("/push/test", async (
 // Apple gives back. BadDeviceToken means the JWT was signed correctly, the team
 // was recognised and the topic was accepted -- everything except the token,
 // which we knew. Any other reason names the part that is actually wrong.
+//
+// BOTH HOSTS, EVERY TIME. This worker serves a development phone and a
+// TestFlight household at once, and the two are separate Apple environments
+// that can fail independently. Checking only the default proved the half whose
+// owner was running the check and left the other half -- the half on everybody
+// else's phone -- unverified until a school run quietly produced no card.
 app.MapPost("/apns/check", async (ApnsClient apns, IOptions<ApnsOptions> options, CancellationToken token) =>
 {
     const string NotARealToken = "00000000000000000000000000000000000000000000000000000000000000ff";
@@ -400,11 +406,44 @@ app.MapPost("/apns/check", async (ApnsClient apns, IOptions<ApnsOptions> options
         FixedAt = DateTimeOffset.UtcNow,
     };
 
-    PushResult result = await apns.UpdateAsync(
-        NotARealToken, probe, PushUrgency.Passive, cancellationToken: token);
-
     ApnsOptions apnsOptions = options.Value;
-    (bool healthy, string verdict) = result.Reason switch
+
+    EnvironmentCheck sandboxCheck = await ProbeAsync(true);
+    EnvironmentCheck productionCheck = await ProbeAsync(false);
+
+    return Results.Ok(new
+    {
+        // Both, because a household needs both. One environment answering
+        // correctly says nothing about the other.
+        healthy = sandboxCheck.Healthy && productionCheck.Healthy,
+        topic = apnsOptions.LiveActivityTopic,
+        keyId = apnsOptions.KeyId,
+        teamId = apnsOptions.TeamId,
+        fallback = apnsOptions.UseSandbox ? "sandbox" : "production",
+        environments = new[] { sandboxCheck, productionCheck },
+    });
+
+    async Task<EnvironmentCheck> ProbeAsync(bool sandbox)
+    {
+        PushResult result = await apns.UpdateAsync(
+            NotARealToken, probe, PushUrgency.Passive, sandbox: sandbox, cancellationToken: token);
+
+        (bool healthy, string verdict) = Interpret(result, apnsOptions);
+
+        return new EnvironmentCheck(
+            sandbox ? "sandbox" : "production",
+            ApnsOptions.HostFor(sandbox),
+            healthy,
+            verdict,
+            (int)result.Status,
+            result.Reason);
+    }
+});
+
+/// <summary>What Apple's refusal of a deliberately invalid token actually means.</summary>
+static (bool Healthy, string Verdict) Interpret(PushResult result, ApnsOptions apnsOptions)
+{
+    return result.Reason switch
     {
         "BadDeviceToken" or "DeviceTokenNotForTopic" or "Unregistered" => (true,
             "Credentials are good. Apple signed off on the key, the team and the topic, "
@@ -431,20 +470,7 @@ app.MapPost("/apns/check", async (ApnsClient apns, IOptions<ApnsOptions> options
 
         _ => (false, $"Unrecognised response from Apple: {result.Reason ?? "(none)"}."),
     };
-
-    return Results.Ok(new
-    {
-        healthy,
-        verdict,
-        environment = apnsOptions.UseSandbox ? "sandbox" : "production",
-        host = apnsOptions.Host,
-        topic = apnsOptions.LiveActivityTopic,
-        keyId = apnsOptions.KeyId,
-        teamId = apnsOptions.TeamId,
-        appleStatus = (int)result.Status,
-        appleReason = result.Reason,
-    });
-});
+}
 
 // A phone introducing itself, so the management page can say WHICH phones are
 // talking to this worker rather than only how many.
@@ -566,3 +592,19 @@ internal sealed record ClientHello(
 /// <param name="Environment">"sandbox" or "production"; sandbox when a build did not say.</param>
 internal sealed record ActivityRegistration(
     string JourneyId, long ChildId, string PushToken, string? Environment);
+
+/// <summary>One APNs environment's answer to the configuration probe.</summary>
+/// <remarks>
+/// Both are reported on every check. A worker serving a development phone and a
+/// TestFlight household talks to two separate Apple environments, and they fail
+/// independently — so proving one says nothing about the other.
+/// </remarks>
+/// <param name="Environment">"sandbox" or "production".</param>
+/// <param name="Reason">Apple's own word for the refusal. BadDeviceToken is the healthy one.</param>
+internal sealed record EnvironmentCheck(
+    string Environment,
+    string Host,
+    bool Healthy,
+    string Verdict,
+    int AppleStatus,
+    string? Reason);

@@ -152,10 +152,25 @@ Before blaming any of that, ask Apple directly:
 curl -s -X POST -H "Authorization: Bearer $WWTB_API_KEY" http://<worker>/apns/check
 ```
 
+`$WWTB_API_KEY` is the **worker's** bearer token — the same value the app wants
+in its "Worker API key" field. Not the APNs `.p8`, and not its Key ID.
+
 It pushes to a token that cannot exist and reports what Apple says about
 everything else. `BadDeviceToken` is the healthy answer: the key, the team and
 the topic were all accepted and only the fake token was refused. Any other
 reason names the part that is actually wrong. This works on a holiday, at
 midnight, and in August — the natural trigger is a school run, which is a
 terrible feedback loop for a configuration error.
+
+**It checks BOTH environments**, and `healthy` is true only when both pass:
+
+```json
+{"healthy":true,
+ "environments":[{"environment":"sandbox","healthy":true,"reason":"BadDeviceToken"},
+                 {"environment":"production","healthy":true,"reason":"BadDeviceToken"}]}
+```
+
+Checking only one would prove the half belonging to whoever ran the command and
+leave the other half — the half on everyone else's phone — unverified until a
+school run quietly produced no card.
 | Card vanishes before the afternoon | Expected: iOS retires an activity ~8 hours after its last update |
