@@ -196,7 +196,10 @@ app.MapPost("/activities", async (
         registration.ChildId,
         registration.PushToken,
         DateTimeOffset.UtcNow,
-        sandbox));
+        sandbox,
+
+        // Bounded like every other display-ish string arriving from a phone.
+        Trimmed(registration.DeviceId, 64)));
 
     await registry.SaveAsync(token);
     return Results.NoContent();
@@ -590,8 +593,12 @@ internal sealed record ClientHello(
 
 /// <summary>What a phone sends after starting a Live Activity.</summary>
 /// <param name="Environment">"sandbox" or "production"; sandbox when a build did not say.</param>
+/// <param name="DeviceId">
+/// Which phone, so a token the OS reissued mid-card replaces its predecessor
+/// rather than joining it. Absent from builds that predate the field.
+/// </param>
 internal sealed record ActivityRegistration(
-    string JourneyId, long ChildId, string PushToken, string? Environment);
+    string JourneyId, long ChildId, string PushToken, string? Environment, string? DeviceId);
 
 /// <summary>One APNs environment's answer to the configuration probe.</summary>
 /// <remarks>

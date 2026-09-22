@@ -42,8 +42,23 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
         const string Environment = "sandbox";
 #endif
 
+        // WHICH PHONE THIS IS. ActivityKit reissues an activity's push token
+        // while the card is running, and every reissue arrives here as another
+        // registration. Keyed only by token the worker cannot tell one phone's
+        // rotated token from a second parent watching the same bus, so it keeps
+        // both and pushes twice to one card -- and a retired token often still
+        // answers 200, so nothing ever cleans it up.
+        //
+        // identifierForVendor is stable for this journey's lifetime, which is
+        // all this needs. It is already sent in the introduction; null only on
+        // a device that refuses it, and the worker falls back to the old
+        // token-only behaviour then.
+        string device = DeviceIdentity.VendorId is string id
+            ? $@",""deviceId"":""{id}"""
+            : string.Empty;
+
         string body = $$"""
-            {"journeyId":"{{journeyId}}","childId":{{childId}},"pushToken":"{{pushToken}}","environment":"{{Environment}}"}
+            {"journeyId":"{{journeyId}}","childId":{{childId}},"pushToken":"{{pushToken}}","environment":"{{Environment}}"{{device}}}
             """;
 
         using HttpRequestMessage request = new(HttpMethod.Post, $"{server.Value.Url}/activities")

@@ -179,7 +179,18 @@ public static class ManagementPage
             // Stale means "has not called in a while", and the page should say
             // so rather than leave a row looking as live as the others.
             bool stale = now - client.LastSeen > TimeSpan.FromHours(24);
-            int cards = activities.Count(activity => activity.Sandbox == client.Sandbox);
+
+            // THIS PHONE'S cards. Counting by environment instead put the same
+            // single card against every sandbox row, so two phones sharing one
+            // registration read as two registrations -- which is exactly the
+            // wrong answer when the question is "did MY phone register?".
+            //
+            // An activity with no device id cannot be attributed to anyone, so
+            // it is counted nowhere here and shows in the Cards table below
+            // instead. A dash says that plainly rather than claiming zero.
+            string cards = activities.Any(activity => activity.DeviceId is null && activity.Sandbox == client.Sandbox)
+                ? $"{activities.Count(activity => activity.DeviceId == client.Id)}+"
+                : activities.Count(activity => activity.DeviceId == client.Id).ToString(CultureInfo.InvariantCulture);
 
             html.Append(CultureInfo.InvariantCulture, $"""
                 <tr class="{(stale ? "stale" : string.Empty)}">

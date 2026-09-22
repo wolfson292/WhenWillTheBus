@@ -19,12 +19,19 @@ namespace WhenWillTheBus.Server.Devices;
 /// sandbox tokens and a TestFlight build mints production ones; each is rejected
 /// outright by the other host, always silently, and a household runs both.
 /// </param>
+/// <param name="DeviceId">
+/// Which phone this card is on, so a REISSUED token for the same card replaces
+/// the old one instead of joining it. Null from a build that predates the field,
+/// or a device that would not give an identifier: those keep the old
+/// token-only behaviour, which over-pushes but never under-pushes.
+/// </param>
 public sealed record RegisteredActivity(
     string JourneyId,
     long ChildId,
     string PushToken,
     DateTimeOffset RegisteredAt,
-    bool Sandbox);
+    bool Sandbox,
+    string? DeviceId = null);
 
 /// <summary>
 /// Remembers which Live Activities are running, so the worker knows where to
@@ -33,6 +40,17 @@ public sealed record RegisteredActivity(
 /// <remarks>
 /// Keyed by push token, because one journey can legitimately be open on several
 /// phones — both parents watching the same bus — and each has its own activity.
+///
+/// THAT ALONE IS NOT ENOUGH. ActivityKit reissues an activity's token while the
+/// card is running, and each reissue arrives as a fresh registration; keyed only
+/// by token, one phone's rotated token is indistinguishable from a second
+/// parent's phone. Both get kept, both get pushed, and because a freshly retired
+/// token still answers 200 rather than BadDeviceToken, nothing ever removes the
+/// dead one. One card was observed holding three.
+///
+/// So a registration carrying a <see cref="RegisteredActivity.DeviceId"/>
+/// displaces any earlier one for the same device AND journey. Different phones
+/// keep their own entries, which is the case the token key existed for.
 /// </remarks>
 public sealed class DeviceRegistry(ILogger<DeviceRegistry> logger)
 {
@@ -43,11 +61,29 @@ public sealed class DeviceRegistry(ILogger<DeviceRegistry> logger)
 
     public void Register(RegisteredActivity activity)
     {
+        int replaced = 0;
+
+        if (activity.DeviceId is string device)
+        {
+            foreach (RegisteredActivity existing in _activities.Values)
+            {
+                if (existing.DeviceId == device
+                    && existing.JourneyId == activity.JourneyId
+                    && existing.PushToken != activity.PushToken
+                    && _activities.TryRemove(existing.PushToken, out _))
+                {
+                    replaced++;
+                }
+            }
+        }
+
         _activities[activity.PushToken] = activity;
+
         logger.LogInformation(
-            "Live Activity registered for journey {JourneyId} (child {ChildId})",
+            "Live Activity registered for journey {JourneyId} (child {ChildId}){Replaced}",
             activity.JourneyId,
-            activity.ChildId);
+            activity.ChildId,
+            replaced > 0 ? $", replacing {replaced} reissued token(s)" : string.Empty);
     }
 
     public IReadOnlyList<RegisteredActivity> ForJourney(string journeyId) =>
@@ -123,7 +159,14 @@ public sealed class DeviceRegistry(ILogger<DeviceRegistry> logger)
                         item.GetProperty("registeredAt").GetString()!,
                         CultureInfo.InvariantCulture,
                         DateTimeStyles.RoundtripKind),
-                    sandbox);
+                    sandbox,
+
+                    // Also predates the field. A null here only means this entry
+                    // cannot be deduplicated until the phone re-registers, which
+                    // it does on its next card.
+                    item.TryGetProperty("deviceId", out JsonElement device)
+                        ? device.GetString()
+                        : null);
             }
         }
         catch (Exception error) when (error is JsonException or FormatException or KeyNotFoundException)
@@ -151,6 +194,12 @@ public sealed class DeviceRegistry(ILogger<DeviceRegistry> logger)
                 writer.WriteString("pushToken", activity.PushToken);
                 writer.WriteString("registeredAt", activity.RegisteredAt.ToString("O", CultureInfo.InvariantCulture));
                 writer.WriteBoolean("sandbox", activity.Sandbox);
+
+                if (activity.DeviceId is string device)
+                {
+                    writer.WriteString("deviceId", device);
+                }
+
                 writer.WriteEndObject();
             }
 
