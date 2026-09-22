@@ -41,7 +41,9 @@ struct BusLiveActivity: Widget {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            ConfidenceDots(filled: context.state.confidence, tint: context.state.accent)
+                            if context.state.confidence > 0 {
+                                ConfidenceDots(filled: context.state.confidence, tint: context.state.accent)
+                            }
                         }
 
                         if context.state.progress != nil {
@@ -102,11 +104,17 @@ private struct LockScreenCard: View {
                 // status usually goes. A timetable guess and a live route match
                 // are the same shape of number, and must never be the same
                 // shape of thing on screen.
-                ConfidenceDots(filled: state.confidence, tint: state.accent)
+                //
+                // Nothing at all when the basis is unknown. Four empty dots and
+                // no label is a meter reporting that it has no reading, which
+                // reads as broken rather than as honest.
+                if state.confidence > 0 {
+                    ConfidenceDots(filled: state.confidence, tint: state.accent)
 
-                Text(state.confidenceLabel)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(state.confidence >= 3 ? AnyShapeStyle(state.accent) : AnyShapeStyle(.secondary))
+                    Text(state.confidenceLabel)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(state.confidence >= 3 ? AnyShapeStyle(state.accent) : AnyShapeStyle(.secondary))
+                }
             }
 
             HStack(alignment: .lastTextBaseline) {
@@ -131,11 +139,16 @@ private struct LockScreenCard: View {
                 RouteTrack(fraction: state.fraction, tint: state.accent)
             }
 
-            HStack {
+            // The LEFT label is the greedy one, rather than a Spacer between
+            // the two. A Spacer here — with or without maxWidth on the row —
+            // left both footnotes huddled together under a track running the
+            // full width of the card. Making the first child take the slack
+            // does not depend on how the row itself gets sized.
+            HStack(spacing: 0) {
                 Text("your stop")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 FixAge(state: state)
             }
         }

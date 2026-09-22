@@ -329,7 +329,14 @@ public sealed class BusPage : ContentPage
         _fixValue.Text = _bus.Latest is { } info && info.Status != BusStatusKind.Unknown
             ? Freshness(info)
             : "unknown";
-        _fixLamp.Color = reporting ? Theme.Aboard : Theme.Fault;
+
+        // A BUS THAT IS NOT REPORTING IS ONLY A FAULT WHILE A RUN IS UNDER WAY.
+        // Between the morning and the afternoon there is no bus to hear from,
+        // and a red lamp against "unknown" at lunchtime reads as something
+        // broken rather than as a fleet that is parked.
+        _fixLamp.Color = reporting
+            ? Theme.Aboard
+            : journey.Active ? Theme.Fault : Theme.Ink600;
 
         _scansValue.Text = ScanSummary(rider);
 
