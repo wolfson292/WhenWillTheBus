@@ -367,7 +367,7 @@ public sealed class BusService : INotifyPropertyChanged
         {
             if (_activityJourneyId != journeyId)
             {
-                if (LiveActivityBridge.Start(journeyId, rider.Name, rider.ChildId, journey, prediction, info, now))
+                if (LiveActivityBridge.Start(journeyId, rider.Name, rider.BusNumber, rider.ChildId, journey, prediction, info, now))
                 {
                     _activityJourneyId = journeyId;
                 }
@@ -510,7 +510,7 @@ public sealed class BusService : INotifyPropertyChanged
         _testCard = true;
         _activityJourneyId = journeyId;
 
-        if (!LiveActivityBridge.Start(journeyId, Rider.Name, Rider.ChildId, pretend, null, Latest, now))
+        if (!LiveActivityBridge.Start(journeyId, Rider.Name, Rider.BusNumber, Rider.ChildId, pretend, null, Latest, now))
         {
             _testCard = false;
             _activityJourneyId = null;

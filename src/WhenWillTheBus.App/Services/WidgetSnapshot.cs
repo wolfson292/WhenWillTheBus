@@ -100,6 +100,18 @@ public static partial class WidgetSnapshot
 
             writer.WriteNumber("updatedAt", now.ToUnixTimeSeconds());
 
+            // 0-100 through the current stage, so the widget can draw the route
+            // track the card and the app both draw. A widget cannot work this
+            // out for itself: it has no engine, no history and no network.
+            if (journey.Progress is int progress)
+            {
+                writer.WriteNumber("progress", progress);
+            }
+            else
+            {
+                writer.WriteNull("progress");
+            }
+
             if (info?.DistanceMiles is double miles)
             {
                 writer.WriteNumber("distanceMiles", Math.Round(miles, 2));

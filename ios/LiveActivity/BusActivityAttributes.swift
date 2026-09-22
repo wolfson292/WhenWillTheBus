@@ -87,5 +87,12 @@ struct BusActivityAttributes: ActivityAttributes {
 
     var riderName: String
 
+    /// The bus as the school numbers it, or empty when the roster has none.
+    ///
+    /// Static for the life of the journey, so it belongs here rather than in
+    /// `ContentState` — which keeps it out of the pushed payload, and therefore
+    /// out of the contract the worker has to match field for field.
+    var busNumber: String
+
     var childId: Int64
 }

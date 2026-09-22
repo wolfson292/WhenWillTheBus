@@ -26,7 +26,7 @@ public sealed class SignInPage : ContentPage
     private readonly Entry _serverUrl = new() { Placeholder = "http://192.168.1.10:8471", Keyboard = Keyboard.Url };
     private readonly Entry _serverKey = new() { Placeholder = "Worker API key", IsPassword = true };
     private readonly Entry _deviceLabel = new() { Placeholder = "This phone's name, e.g. Angela's iPhone" };
-    private readonly Label _status = new() { FontSize = 13, TextColor = Colors.Gray };
+    private readonly Label _status = new() { FontSize = 13, TextColor = Theme.TextDim };
 
     public SignInPage(CredentialStore credentials, ServerLink server, BusService bus)
     {
@@ -232,5 +232,5 @@ public sealed class SignInPage : ContentPage
         new() { Text = text, FontSize = 17, FontAttributes = FontAttributes.Bold, Margin = new Thickness(0, 12, 0, 0) };
 
     private static Label Note(string text) =>
-        new() { Text = text, FontSize = 12, TextColor = Colors.Gray };
+        new() { Text = text, FontSize = 12, TextColor = Theme.TextDim };
 }

@@ -29,6 +29,10 @@ struct BusSnapshot: Codable {
     var distanceMiles: Double?
     var busNumber: String?
 
+    /// 0-100 through the current stage, written by the app because a widget
+    /// cannot work it out: it has no engine, no history and no network.
+    var progress: Int?
+
     var targetDate: Date? { target.map(Date.init(timeIntervalSince1970:)) }
     var updatedAtDate: Date { Date(timeIntervalSince1970: updatedAt) }
 
@@ -72,4 +76,10 @@ struct BusSnapshot: Codable {
 
     /// A snapshot nothing has refreshed for hours is not worth showing as fact.
     var isStale: Bool { Date().timeIntervalSince(updatedAtDate) > 3 * 60 * 60 }
+
+    /// `progress` as a drawable 0-1, clamped. Zero when there is nothing to draw.
+    var fraction: Double {
+        guard let progress else { return 0 }
+        return min(max(Double(progress) / 100, 0), 1)
+    }
 }

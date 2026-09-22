@@ -2,7 +2,6 @@
 
 using WhenWillTheBus.App.Pages;
 using WhenWillTheBus.App.Services;
-using WhenWillTheBus.App.Services;
 
 namespace WhenWillTheBus.App;
 
@@ -15,6 +14,8 @@ public sealed class App : Application
     {
         _bus = bus;
         _services = services;
+
+        Resources = Palette();
 
         // A setup link only ever OFFERS a configuration. It is confirmed on
         // screen before anything is saved, because a URL scheme can be opened by
@@ -53,26 +54,125 @@ public sealed class App : Application
             "OK");
     }
 
+    /// <summary>
+    /// The defaults every screen inherits.
+    /// </summary>
+    /// <remarks>
+    /// Implicit styles rather than a colour on each control: an explicit value
+    /// set on an instance still wins, so a page that means something particular
+    /// keeps saying it, and a page that does not is simply legible. Without
+    /// these, MAUI's own defaults put near-black text on the near-black ground
+    /// of every screen that is not <see cref="Pages.BusPage"/>.
+    /// </remarks>
+    private static ResourceDictionary Palette()
+    {
+        ResourceDictionary resources = new();
+
+        resources.Add(new Style(typeof(Label))
+        {
+            Setters = { new Setter { Property = Label.TextColorProperty, Value = Theme.Text } },
+        });
+
+        resources.Add(new Style(typeof(Entry))
+        {
+            Setters =
+            {
+                new Setter { Property = Entry.TextColorProperty, Value = Theme.Text },
+                new Setter { Property = Entry.PlaceholderColorProperty, Value = Theme.TextDim },
+                new Setter { Property = VisualElement.BackgroundColorProperty, Value = Theme.Ink700 },
+            },
+        });
+
+        resources.Add(new Style(typeof(Editor))
+        {
+            Setters =
+            {
+                new Setter { Property = Editor.TextColorProperty, Value = Theme.Text },
+                new Setter { Property = Editor.PlaceholderColorProperty, Value = Theme.TextDim },
+                new Setter { Property = VisualElement.BackgroundColorProperty, Value = Theme.Ink700 },
+            },
+        });
+
+        resources.Add(new Style(typeof(Button))
+        {
+            Setters =
+            {
+                new Setter { Property = Button.TextColorProperty, Value = Theme.Ink900 },
+                new Setter { Property = VisualElement.BackgroundColorProperty, Value = Theme.Bus },
+                new Setter { Property = Button.CornerRadiusProperty, Value = 12 },
+            },
+        });
+
+        resources.Add(new Style(typeof(ContentPage))
+        {
+            Setters = { new Setter { Property = VisualElement.BackgroundColorProperty, Value = Theme.Ink900 } },
+        });
+
+        resources.Add(new Style(typeof(CollectionView))
+        {
+            Setters = { new Setter { Property = VisualElement.BackgroundColorProperty, Value = Theme.Ink900 } },
+        });
+
+        resources.Add(new Style(typeof(ActivityIndicator))
+        {
+            Setters = { new Setter { Property = ActivityIndicator.ColorProperty, Value = Theme.Bus } },
+        });
+
+        return resources;
+    }
+
     protected override Window CreateWindow(IActivationState? activationState)
     {
+        // DARK, WHATEVER THE PHONE IS SET TO. This is read at 6am on a kerb and
+        // at 3pm in a car park, and the palette in Theme is built for an unlit
+        // ground. Following the system would mean an AppThemeBinding on every
+        // property, and half-done that reads as a bug rather than a theme.
+        UserAppTheme = AppTheme.Dark;
+
         // Four tabs rather than one screen with a Settings button. The bus is
         // what you open the app for, so it stays first and stays uncluttered;
         // the map, the scans and the settings are each a place to go looking.
-        TabbedPage tabs = new();
-        tabs.Children.Add(Tab<BusPage>());
-        tabs.Children.Add(Tab<MapPage>());
-        tabs.Children.Add(Tab<ScansPage>());
-        tabs.Children.Add(Tab<HistoryPage>());
-        tabs.Children.Add(Tab<SignInPage>());
+        TabbedPage tabs = new()
+        {
+            BackgroundColor = Theme.Ink900,
+            BarBackgroundColor = Theme.Ink900,
+            SelectedTabColor = Theme.Bus,
+            UnselectedTabColor = Theme.TextDim,
+        };
+
+        tabs.Children.Add(Tab<BusPage>("tab_bus.png"));
+        tabs.Children.Add(Tab<MapPage>("tab_map.png"));
+        tabs.Children.Add(Tab<ScansPage>("tab_scans.png"));
+        tabs.Children.Add(Tab<HistoryPage>("tab_history.png"));
+        tabs.Children.Add(Tab<SignInPage>("tab_settings.png"));
 
         return new Window(tabs);
     }
 
-    private NavigationPage Tab<TPage>()
+    /// <summary>
+    /// One tab, with its icon.
+    /// </summary>
+    /// <remarks>
+    /// The icon file is named .png even though the source is an SVG: resizetizer
+    /// rasterises everything under Resources/Images at build time, and what ends
+    /// up in the bundle carries the .png extension. Asking for the .svg finds
+    /// nothing, and a missing tab icon is silent — the tab simply renders as its
+    /// title, which is exactly what it did before it had one.
+    /// </remarks>
+    private NavigationPage Tab<TPage>(string icon)
         where TPage : Page
     {
         Page page = _services.GetRequiredService<TPage>();
-        return new NavigationPage(page) { Title = page.Title };
+        page.BackgroundColor = Theme.Ink900;
+
+        return new NavigationPage(page)
+        {
+            Title = page.Title,
+            IconImageSource = ImageSource.FromFile(icon),
+            BarBackgroundColor = Theme.Ink900,
+            BarTextColor = Theme.Text,
+            BackgroundColor = Theme.Ink900,
+        };
     }
 
     /// <summary>

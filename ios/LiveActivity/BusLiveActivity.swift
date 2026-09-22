@@ -20,35 +20,59 @@ struct BusLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(context.attributes.riderName, systemImage: "bus.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        BusMark(tint: context.state.accent, width: 16)
+                        Text(context.attributes.riderName)
+                            .font(.caption.weight(.semibold))
+                    }
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
                     ArrivalTime(state: context.state)
-                        .font(.title3.weight(.semibold))
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(context.state.accent)
+                        .monospacedDigit()
                 }
 
                 DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(context.state.title).font(.caption).foregroundStyle(.secondary)
-                        ProgressTrack(state: context.state)
-                        BandFootnote(state: context.state)
+                    VStack(alignment: .leading, spacing: 7) {
+                        HStack {
+                            Text(context.state.title)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            ConfidenceDots(filled: context.state.confidence, tint: context.state.accent)
+                        }
+
+                        if context.state.progress != nil {
+                            RouteTrack(fraction: context.state.fraction, tint: context.state.accent)
+                        }
+
+                        HStack {
+                            BandFootnote(state: context.state)
+                            Spacer()
+                            FixAge(state: context.state)
+                        }
                     }
                 }
             } compactLeading: {
-                Image(systemName: "bus.fill")
+                BusMark(tint: context.state.accent, width: 16)
             } compactTrailing: {
                 // Lead with the TIME, not the distance. A watch and the compact
                 // island both truncate hard, and the distance is already drawn
                 // as the bar -- "4.5 miles from..." spent the whole visible line
                 // restating it.
-                ArrivalTime(state: context.state).font(.caption2.weight(.semibold))
+                ArrivalTime(state: context.state)
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(context.state.accent)
+                    .monospacedDigit()
             } minimal: {
-                Image(systemName: "bus.fill")
+                BusMark(tint: context.state.accent, width: 15)
             }
-            .keylineTint(.yellow)
+            // FOLLOWS THE STATE, not a fixed yellow. This ring is often the only
+            // colour on screen, and yellow while the rider is already aboard
+            // answers a question nobody is asking any more.
+            .keylineTint(context.state.accent)
         }
     }
 }
@@ -56,45 +80,70 @@ struct BusLiveActivity: Widget {
 private struct LockScreenCard: View {
     let context: ActivityViewContext<BusActivityAttributes>
 
+    private var state: BusActivityAttributes.ContentState { context.state }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Label(context.attributes.riderName, systemImage: "bus.fill")
-                    .font(.subheadline.weight(.medium))
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 7) {
+                BusMark(tint: state.accent, width: 17)
 
-                Spacer()
+                Text(context.attributes.riderName)
+                    .font(.subheadline.weight(.semibold))
 
-                if let qualifier = context.state.qualifier {
-                    Text(qualifier)
-                        .font(.caption2)
+                if !context.attributes.busNumber.isEmpty {
+                    Text("Bus \(context.attributes.busNumber)")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 8)
+
+                // HOW MUCH THIS IS ENTITLED TO CLAIM, in the top right where a
+                // status usually goes. A timetable guess and a live route match
+                // are the same shape of number, and must never be the same
+                // shape of thing on screen.
+                ConfidenceDots(filled: state.confidence, tint: state.accent)
+
+                Text(state.confidenceLabel)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(state.confidence >= 3 ? AnyShapeStyle(state.accent) : AnyShapeStyle(.secondary))
+            }
+
+            HStack(alignment: .lastTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(state.title)
+                        .font(.headline)
+                    Subtitle(state: state)
+                }
+
+                Spacer(minLength: 10)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    ArrivalTime(state: state)
+                        .font(.title.weight(.bold))
+                        .foregroundStyle(state.accent)
+                        .monospacedDigit()
+                    DueAt(state: state)
                 }
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(context.state.title)
-                    .font(.headline)
-
-                Spacer()
-
-                ArrivalTime(state: context.state)
-                    .font(.title2.weight(.semibold))
-                    .monospacedDigit()
+            if state.progress != nil {
+                RouteTrack(fraction: state.fraction, tint: state.accent)
             }
 
-            ProgressTrack(state: context.state)
-
             HStack {
-                BandFootnote(state: context.state)
+                Text("your stop")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                 Spacer()
-                FixAge(state: context.state)
+                FixAge(state: state)
             }
         }
         .padding()
     }
 }
 
-/// The time the bus is expected, and how long that is from now.
+/// The time the bus is expected, or how long that is from now.
 private struct ArrivalTime: View {
     let state: BusActivityAttributes.ContentState
 
@@ -102,26 +151,49 @@ private struct ArrivalTime: View {
         if state.isArrived {
             Text("now")
         } else if let target = state.targetDate {
-            // Rendered by the OS from an instant, so it keeps counting down
-            // between pushes -- which is exactly why the server must re-push
-            // when the target MOVES. A backstop alone would leave this counting
-            // confidently down to a time that is no longer true.
-            Text(target, style: .timer)
+            if state.countdownIsHonest {
+                // Rendered by the OS from an instant, so it keeps counting down
+                // between pushes -- which is exactly why the server must re-push
+                // when the target MOVES. A backstop alone would leave this
+                // counting confidently down to a time that is no longer true.
+                Text(target, style: .timer)
+            } else {
+                // Nothing here is measuring anything minute by minute, so do not
+                // draw something that looks like it is.
+                Text(target, style: .time)
+            }
         } else {
             Text("--")
         }
     }
 }
 
-/// How far through the current stage the journey is.
-private struct ProgressTrack: View {
+/// The clock time, when the headline is a running countdown.
+private struct DueAt: View {
     let state: BusActivityAttributes.ContentState
 
     var body: some View {
-        if let progress = state.progress {
-            ProgressView(value: Double(progress), total: 100)
-                .progressViewStyle(.linear)
-                .tint(.yellow)
+        if !state.isArrived, state.countdownIsHonest, let target = state.targetDate {
+            Text("due \(target, style: .time)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// The one line under the stage: how far out, and the range it has fallen in.
+private struct Subtitle: View {
+    let state: BusActivityAttributes.ContentState
+
+    var body: some View {
+        if !state.isReporting {
+            Text("not reporting")
+                .font(.caption)
+                .foregroundStyle(BusPalette.fault)
+        } else if let miles = state.distanceMiles {
+            Text(String(format: "%.1f miles out", miles))
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 }
@@ -155,7 +227,7 @@ private struct FixAge: View {
         if let fixedAt = state.fixedAtDate {
             Text("seen \(fixedAt, style: .relative) ago")
                 .font(.caption2)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(state.isReporting ? AnyShapeStyle(.tertiary) : AnyShapeStyle(BusPalette.fault))
         }
     }
 }

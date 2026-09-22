@@ -117,3 +117,49 @@ In rough order of likelihood:
 | Card updates in the foreground only | The worker is unreachable, or the activity's push token was never registered. Check `/status`. |
 | Pushes accepted, nothing shows | Sandbox/production mismatch. Step 4. |
 | Card vanishes before the afternoon | Expected: iOS retires an activity roughly eight hours after its last update. A morning card is gone before the afternoon bus leaves school, which is why each journey gets its own activity. |
+
+---
+
+## Artwork: two traps in resizetizer
+
+The app icon, the launch screen and the tab-bar icons are all SVGs under
+`src/WhenWillTheBus.App/Resources/`, rasterised at build time by MAUI's
+resizetizer. Both of the ways that goes wrong are silent.
+
+### A changed SVG can build into the OLD artwork
+
+An ordinary incremental build after editing `Resources/AppIcon/appicon.svg`
+rewrote every generated PNG with a **fresh timestamp and the previous
+drawing inside**. The build succeeds, the file dates all look right, and the
+phone shows the old icon. Force it:
+
+```bash
+dotnet build src/WhenWillTheBus.App -t:Rebuild -p:RuntimeIdentifier=iossimulator-arm64
+```
+
+Deleting `obj/.../resizetizer/` by hand is NOT the shortcut it looks like: the
+next build then fails in `Xamarin.Shared.targets` with a missing
+`MauiInfo.plist`, because the targets that would regenerate it are still
+considered up to date.
+
+Check the artwork rather than the build log — the generated icons are at
+`obj/Debug/net10.0-ios/<rid>/resizetizer/r/Assets.xcassets/appicon.appiconset/`.
+
+### `MauiImage` is not globbed, whatever the docs say
+
+`EnableDefaultMauiItems` is `true` here and the SDK still puts **nothing** in
+`@(MauiImage)`. Files in `Resources/Images/` are therefore invisible unless the
+`.csproj` names them, which it now does. Nothing warns: the tab bar simply
+renders as text with no icons, exactly as it did before it had any.
+
+```bash
+dotnet build src/WhenWillTheBus.App -p:RuntimeIdentifier=iossimulator-arm64 --getItem:MauiImage
+```
+
+An empty list there means the icons are not in the build.
+
+### Reading the generated PNGs
+
+They are white-on-transparent, so opening one against a white background shows a
+blank square and proves nothing. Judge them in the simulator, or against a dark
+background.

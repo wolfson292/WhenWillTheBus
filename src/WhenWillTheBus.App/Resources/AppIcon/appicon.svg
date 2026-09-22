@@ -1,22 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 456 456" width="456" height="456">
-  <rect width="456" height="456" fill="#1B1B1F"/>
-  <g transform="translate(228 228)">
-    <!-- Body -->
-    <rect x="-140" y="-96" width="280" height="168" rx="30" fill="#F7C948"/>
-    <!-- Windows -->
-    <rect x="-116" y="-72" width="60" height="50" rx="10" fill="#1B1B1F" opacity="0.82"/>
-    <rect x="-44" y="-72" width="60" height="50" rx="10" fill="#1B1B1F" opacity="0.82"/>
-    <rect x="28" y="-72" width="60" height="50" rx="10" fill="#1B1B1F" opacity="0.82"/>
-    <!-- Destination band -->
-    <rect x="-140" y="8" width="280" height="16" fill="#1B1B1F" opacity="0.18"/>
-    <!-- Wheels -->
-    <circle cx="-82" cy="78" r="30" fill="#1B1B1F"/>
-    <circle cx="-82" cy="78" r="13" fill="#F7C948"/>
-    <circle cx="82" cy="78" r="30" fill="#1B1B1F"/>
-    <circle cx="82" cy="78" r="13" fill="#F7C948"/>
-    <!-- Headlamp -->
-    <rect x="116" y="30" width="24" height="18" rx="8" fill="#FFF3D1"/>
-  </g>
+<!--
+  The bus seen head-on, which is how you see it when it actually arrives.
+
+  Five shapes, drawn on a 1024 grid where every measurement is a whole number.
+  Three of them - the windscreen band and the two lamps - are what makes it a
+  bus rather than a yellow square, and they are the three that survive being
+  scaled to the 40px tab icon. The grille disappears on its own below about
+  60px, which is the only reason there is no separate small-size drawing.
+
+  FULL BLEED, NO ROUNDED CORNERS, NO ALPHA. iOS applies its own mask and
+  rejects an icon with a transparent channel; rounding the corners here would
+  show as a dark seam inside the system's own curve.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect width="1024" height="1024" fill="#0E1117"/>
+  <!-- Body. 800 of 1024 wide: the mark carries about 78% of the tile, which is
+       what stops it reading as small next to its neighbours on a home screen.
+       Wider than this and the yellow corners start crowding the superellipse
+       iOS masks it with. -->
+  <rect x="112" y="144" width="800" height="736" rx="190" fill="#F6C445"/>
+  <!-- Windscreen -->
+  <rect x="208" y="256" width="608" height="272" rx="112" fill="#0E1117"/>
+  <!-- Headlamps -->
+  <circle cx="284" cy="708" r="66" fill="#FFF4D6"/>
+  <circle cx="740" cy="708" r="66" fill="#FFF4D6"/>
+  <!-- Grille -->
+  <rect x="426" y="680" width="172" height="56" rx="28" fill="#0E1117" opacity="0.25"/>
 </svg>

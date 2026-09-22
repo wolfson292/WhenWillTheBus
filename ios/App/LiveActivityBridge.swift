@@ -52,6 +52,7 @@ public func wwtb_set_token_callback(_ callback: @escaping @convention(c) (Unsafe
 public func wwtb_start_activity(
     _ journeyId: UnsafePointer<CChar>,
     _ riderName: UnsafePointer<CChar>,
+    _ busNumber: UnsafePointer<CChar>,
     _ childId: Int64,
     _ stateJson: UnsafePointer<CChar>
 ) -> Bool {
@@ -72,6 +73,7 @@ public func wwtb_start_activity(
     let attributes = BusActivityAttributes(
         journeyId: id,
         riderName: String(cString: riderName),
+        busNumber: String(cString: busNumber),
         childId: childId
     )
 

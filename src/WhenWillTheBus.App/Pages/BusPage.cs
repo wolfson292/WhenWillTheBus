@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.ComponentModel;
+using Microsoft.Maui.Controls.Shapes;
 using WhenWillTheBus.App.Services;
 using WhenWillTheBus.Core.Api;
 using WhenWillTheBus.Core.Model;
@@ -12,28 +13,68 @@ namespace WhenWillTheBus.App.Pages;
 /// </summary>
 /// <remarks>
 /// LEAD WITH THE TIME, NOT THE DISTANCE. The distance is already drawn as the
-/// progress bar, and "4.5 miles from…" spent the whole visible line restating
+/// route track, and "4.5 miles from…" spent the whole visible line restating
 /// it — which matters most on the smallest screen, where it is also the only
 /// line there is.
+///
+/// SAY HOW MUCH IS ACTUALLY KNOWN. The four-dot meter under the time is the
+/// visible form of <see cref="PredictionBasis"/>. A timetable guess and a live
+/// route match are the same shape of number and must never be the same shape of
+/// thing on screen: the published afternoon time here reads nearly half an hour
+/// later than the bus actually comes.
 /// </remarks>
 public sealed class BusPage : ContentPage
 {
     private readonly BusService _bus;
     private readonly IServiceProvider _services;
 
-    private readonly Label _stage = new() { FontSize = 15, TextColor = Colors.Gray };
-    private readonly Label _arrival = new() { FontSize = 56, FontAttributes = FontAttributes.Bold };
-    private readonly Label _countdown = new() { FontSize = 17 };
-    private readonly Label _band = new() { FontSize = 13, TextColor = Colors.Gray };
-    private readonly ProgressBar _progress = new() { HeightRequest = 6 };
-    private readonly Label _distance = new() { FontSize = 14, TextColor = Colors.Gray };
-    private readonly Label _confidence = new() { FontSize = 12, TextColor = Colors.Gray };
-    private readonly Label _fix = new() { FontSize = 12, TextColor = Colors.Gray };
-    private readonly Label _scans = new() { FontSize = 13, TextColor = Colors.Gray };
-    private readonly Label _school = new() { FontSize = 13, TextColor = Colors.Gray };
-    private readonly Label _rider = new() { FontSize = 12, TextColor = Colors.Gray };
-    private readonly Label _problem = new() { FontSize = 13, TextColor = Colors.OrangeRed, IsVisible = false };
-    private readonly Label _localOnly = new() { FontSize = 12, TextColor = Colors.DarkOrange, IsVisible = false };
+    private readonly Label _rider = new()
+    {
+        FontSize = 17,
+        FontAttributes = FontAttributes.Bold,
+        TextColor = Theme.Text,
+        VerticalOptions = LayoutOptions.Center,
+    };
+
+    private readonly Label _busNumber = new() { FontSize = 11, FontAttributes = FontAttributes.Bold, TextColor = Theme.TextMid };
+    private readonly Border _busChip;
+
+    private readonly Label _stage = new() { FontSize = 15, TextColor = Theme.TextDim };
+    private readonly Label _arrival = new() { FontSize = 76, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text };
+    private readonly Label _meridiem = new() { FontSize = 24, FontAttributes = FontAttributes.Bold, TextColor = Theme.TextDim };
+    private readonly Label _countdown = new() { FontSize = 22, FontAttributes = FontAttributes.Bold };
+    private readonly Label _band = new() { FontSize = 14, TextColor = Theme.TextDim };
+
+    private readonly Grid _track;
+    private readonly ColumnDefinition _behind = new(new GridLength(1, GridUnitType.Star));
+    private readonly ColumnDefinition _ahead = new(new GridLength(1, GridUnitType.Star));
+    private readonly BoxView _trackFill = new() { HeightRequest = 6, CornerRadius = new CornerRadius(3), VerticalOptions = LayoutOptions.Center };
+    private readonly Border _knob;
+    private readonly BoxView _knobScreen = new() { HeightRequest = 5, WidthRequest = 14, CornerRadius = new CornerRadius(2.5), Color = Theme.Ink900 };
+    private readonly Label _distance = new() { FontSize = 12, TextColor = Theme.TextDim };
+    private readonly Label _stopCaption = new() { Text = "your stop", FontSize = 12, TextColor = Theme.TextDim, HorizontalOptions = LayoutOptions.End };
+    private readonly VerticalStackLayout _trackBlock;
+
+    private readonly BoxView[] _dots =
+    [
+        Dot(), Dot(), Dot(), Dot(),
+    ];
+
+    private readonly Label _basis = new() { FontSize = 13, FontAttributes = FontAttributes.Bold, VerticalOptions = LayoutOptions.Center };
+    private readonly Label _confidence = new() { FontSize = 13, TextColor = Theme.TextMid };
+    private readonly Border _confidenceCard;
+
+    private readonly Label _fixValue = new() { FontSize = 13, TextColor = Theme.TextDim, HorizontalOptions = LayoutOptions.End };
+    private readonly BoxView _fixLamp = new() { HeightRequest = 8, WidthRequest = 8, CornerRadius = new CornerRadius(4), VerticalOptions = LayoutOptions.Center };
+    private readonly Label _scansValue = new() { FontSize = 13, TextColor = Theme.TextDim, HorizontalOptions = LayoutOptions.End };
+    private readonly Label _schoolValue = new() { FontSize = 13, TextColor = Theme.TextDim, HorizontalOptions = LayoutOptions.End };
+    private readonly Grid _schoolRow;
+    private readonly BoxView _schoolRule;
+    private readonly Border _factsCard;
+
+    private readonly Label _footer = new() { FontSize = 12, TextColor = Theme.TextDim };
+    private readonly Label _problem = new() { FontSize = 13, TextColor = Theme.Fault, IsVisible = false };
+    private readonly Label _localOnly = new() { FontSize = 12, TextColor = Theme.Bus, IsVisible = false };
 
     public BusPage(BusService bus, IServiceProvider services)
     {
@@ -41,31 +82,122 @@ public sealed class BusPage : ContentPage
         _services = services;
 
         Title = "Bus";
-        Padding = new Thickness(20, 16);
+        BackgroundColor = Theme.Ink900;
+        Padding = 0;
+
+        // This screen draws its own header — the rider's name and their bus —
+        // so the navigation bar above it would be a second, emptier copy of the
+        // same thing. Title is still set, because the TAB reads it.
+        NavigationPage.SetHasNavigationBar(this, false);
+
+        _busChip = new Border
+        {
+            BackgroundColor = Theme.Ink700,
+            Stroke = Colors.Transparent,
+            StrokeShape = new RoundRectangle { CornerRadius = 6 },
+            Padding = new Thickness(8, 3),
+            VerticalOptions = LayoutOptions.Center,
+            Content = _busNumber,
+        };
+
+        _knob = new Border
+        {
+            HeightRequest = 30,
+            WidthRequest = 30,
+            Stroke = Theme.Ink900,
+            StrokeThickness = 4,
+            StrokeShape = new RoundRectangle { CornerRadius = 10 },
+            Padding = 0,
+            HorizontalOptions = LayoutOptions.End,
+            VerticalOptions = LayoutOptions.Center,
+
+            // Half the knob's width, so it straddles the head of the fill
+            // rather than stopping short of it.
+            Margin = new Thickness(0, 0, -15, 0),
+            Content = new Grid { Children = { _knobScreen } },
+        };
+
+        _track = BuildTrack();
+
+        _trackBlock = new VerticalStackLayout
+        {
+            Spacing = 4,
+            Margin = new Thickness(0, 28, 0, 0),
+            Children =
+            {
+                _track,
+                new Grid { Children = { _distance, _stopCaption } },
+            },
+        };
+
+        _confidenceCard = Card(new VerticalStackLayout
+        {
+            Spacing = 9,
+            Children =
+            {
+                new HorizontalStackLayout
+                {
+                    Spacing = 5,
+                    Children = { _dots[0], _dots[1], _dots[2], _dots[3], Spacer(4), _basis },
+                },
+                _confidence,
+            },
+        });
+
+        _schoolRule = Rule();
+        _schoolRow = Row("Reached school", _schoolValue);
+
+        _factsCard = Card(new VerticalStackLayout
+        {
+            Spacing = 0,
+            Children =
+            {
+                Row("Bus GPS", _fixValue, _fixLamp),
+                Rule(),
+                Row("Scans today", _scansValue),
+                _schoolRule,
+                _schoolRow,
+            },
+        });
 
         Content = new ScrollView
         {
             Content = new VerticalStackLayout
             {
-                Spacing = 10,
+                Padding = new Thickness(20, 8, 20, 28),
+                Spacing = 0,
                 Children =
                 {
+                    Header(),
                     _problem,
                     _localOnly,
-                    _stage,
-                    _arrival,
-                    _countdown,
-                    _band,
-                    new BoxView { HeightRequest = 6, Color = Colors.Transparent },
-                    _progress,
-                    _distance,
-                    new BoxView { HeightRequest = 10, Color = Colors.Transparent },
-                    _confidence,
-                    _fix,
-                    _scans,
-                    _school,
-                    new BoxView { HeightRequest = 6, Color = Colors.Transparent },
-                    _rider,
+                    new VerticalStackLayout
+                    {
+                        Spacing = 0,
+                        Margin = new Thickness(0, 26, 0, 0),
+                        Children =
+                        {
+                            _stage,
+                            new HorizontalStackLayout
+                            {
+                                Margin = new Thickness(0, 6, 0, 0),
+                                Children = { _arrival, Meridiem() },
+                            },
+                            new HorizontalStackLayout
+                            {
+                                Spacing = 10,
+                                Margin = new Thickness(0, 8, 0, 0),
+                                Children = { _countdown, BandHolder() },
+                            },
+                        },
+                    },
+                    _trackBlock,
+                    Spacer(22),
+                    _confidenceCard,
+                    Spacer(12),
+                    _factsCard,
+                    Spacer(14),
+                    _footer,
                 },
             },
         };
@@ -87,6 +219,7 @@ public sealed class BusPage : ContentPage
     {
         _problem.Text = _bus.Problem;
         _problem.IsVisible = !string.IsNullOrEmpty(_bus.Problem);
+        _problem.Margin = new Thickness(0, _problem.IsVisible ? 14 : 0, 0, 0);
 
         // A card nothing can update once the app is suspended will simply stop
         // advancing. Saying so beats leaving a parent to wonder why.
@@ -94,27 +227,32 @@ public sealed class BusPage : ContentPage
         _localOnly.Text = _localOnly.IsVisible
             ? "The Lock Screen card only updates while this app is open."
             : string.Empty;
+        _localOnly.Margin = new Thickness(0, _localOnly.IsVisible ? 10 : 0, 0, 0);
+
+        Student? rider = _bus.Rider;
+        _rider.Text = rider?.Name ?? "Bus";
+        _busChip.IsVisible = rider?.BusNumber is { Length: > 0 };
+        _busNumber.Text = rider?.BusNumber is { Length: > 0 } number ? $"Bus {number}" : string.Empty;
+        _footer.Text = FooterSummary(rider);
 
         Journey journey = _bus.Journey;
         ArrivalPrediction? prediction = _bus.Prediction;
 
         if (prediction is null)
         {
-            // Nothing to say. Say nothing, rather than showing an empty
-            // progress track and a lone dash where a time should be -- a
-            // half-drawn card reads as a broken one.
+            // Nothing to say. Say nothing, rather than showing an empty progress
+            // track and a lone dash where a time should be — a half-drawn card
+            // reads as a broken one.
             ShowEstimate(false);
             _stage.Text = string.IsNullOrEmpty(_bus.Problem) ? "No run scheduled." : string.Empty;
-            _distance.Text = string.Empty;
-            _fix.Text = string.Empty;
-            _scans.Text = string.Empty;
-            _school.Text = string.Empty;
-            _rider.Text = RiderSummary(_bus.Rider);
+            _factsCard.IsVisible = false;
             return;
         }
 
+        DateTimeOffset now = DateTimeOffset.Now;
         ShowEstimate(true);
-        _stage.Text = StageTitle(journey.Stage, _bus.Rider?.Name);
+        _factsCard.IsVisible = true;
+        _stage.Text = StageTitle(journey.Stage, rider?.Name);
 
         // WHILE THE RIDER IS ABOARD, THE TIME THAT MATTERS IS WHERE THE RIDE
         // ENDS. The prediction is about the next arrival at the HOME STOP, and
@@ -124,11 +262,24 @@ public sealed class BusPage : ContentPage
         bool aboard = journey.Stage is JourneyStage.ToSchool or JourneyStage.FromSchool;
         DateTimeOffset? headline = aboard ? journey.Target : prediction.Arrival;
 
+        // The bus going quiet is a state, not a failure to draw. The last
+        // estimate stays up but loses its colour, so the screen says "this is
+        // what I knew" instead of counting confidently down to a time nothing is
+        // backing any more.
+        bool reporting = _bus.Latest?.Status is BusStatusKind.Current;
+        Color accent = Theme.For(journey.Stage, headline, now);
+        Color trackColour = reporting ? accent : Theme.Ink600;
+
         _arrival.IsVisible = headline is not null;
+        _meridiem.IsVisible = headline is not null;
+
         if (headline is { } moment)
         {
-            _arrival.Text = moment.ToLocalTime().ToString("h:mm");
+            DateTimeOffset local = moment.ToLocalTime();
+            _arrival.Text = local.ToString("h:mm");
+            _meridiem.Text = local.ToString("tt");
             _countdown.Text = Countdown(moment);
+            _countdown.TextColor = reporting ? accent : Theme.TextDim;
             _countdown.IsVisible = true;
         }
         else if (aboard && journey.Boarded is { } boarded)
@@ -137,6 +288,7 @@ public sealed class BusPage : ContentPage
             // the one thing that IS known rather than borrowing a number from a
             // different journey.
             _countdown.Text = $"aboard since {boarded.ToLocalTime():h:mm tt}";
+            _countdown.TextColor = Theme.Aboard;
             _countdown.IsVisible = true;
         }
         else
@@ -150,31 +302,193 @@ public sealed class BusPage : ContentPage
         // STOP, so it says nothing about a ride in progress.
         bool haveBand = !aboard && prediction.Earliest is not null && prediction.Latest is not null;
         _band.Text = haveBand
-            ? $"between {prediction.Earliest!.Value.ToLocalTime():h:mm} and {prediction.Latest!.Value.ToLocalTime():h:mm}"
+            ? $"{prediction.Earliest!.Value.ToLocalTime():h:mm} – {prediction.Latest!.Value.ToLocalTime():h:mm}"
             : string.Empty;
         _band.IsVisible = haveBand;
 
-        _progress.Progress = (journey.Progress ?? 0) / 100.0;
-        _progress.IsVisible = journey.Progress is not null;
+        DrawTrack(journey.Progress, trackColour);
 
         _distance.Text = _bus.Latest?.DistanceMiles is double miles
-            ? $"{miles:F1} miles from the stop"
+            ? $"{miles:F1} miles out"
             : string.Empty;
 
         // Being honest about how the answer was reached. A window centred on a
         // timetable twenty minutes out is the failure that hides behind a
         // confident-looking number.
+        (int filled, Color colour, string label) = Theme.Confidence(prediction.Basis);
+        for (int i = 0; i < _dots.Length; i++)
+        {
+            _dots[i].Color = i < filled ? colour : Theme.Ink600;
+        }
+
+        _basis.Text = label;
+        _basis.TextColor = colour == Theme.Bus ? Theme.Bus : Theme.Text;
         _confidence.Text = Confidence(prediction);
 
         // The INSTANT, not an age: an age changes every minute a bus is running.
-        _fix.Text = _bus.Latest is { } info && info.Status != BusStatusKind.Unknown
-            ? $"Bus GPS: {Freshness(info)}"
-            : string.Empty;
+        _fixValue.Text = _bus.Latest is { } info && info.Status != BusStatusKind.Unknown
+            ? Freshness(info)
+            : "unknown";
+        _fixLamp.Color = reporting ? Theme.Aboard : Theme.Fault;
 
-        _scans.Text = ScanSummary(_bus.Rider);
-        _school.Text = SchoolSummary();
-        _rider.Text = RiderSummary(_bus.Rider);
+        _scansValue.Text = ScanSummary(rider);
+
+        string school = SchoolSummary();
+        _schoolValue.Text = school;
+        _schoolRow.IsVisible = school.Length > 0;
+        _schoolRule.IsVisible = school.Length > 0;
     }
+
+    /// <summary>Lay the fill, the knob and the stop marker out along the route.</summary>
+    /// <remarks>
+    /// Two star columns split at the progress fraction, so the head of the fill
+    /// is a layout boundary rather than a measured pixel offset — which means it
+    /// lands correctly on every screen width without anyone computing one.
+    ///
+    /// The fraction is clamped off both ends. A zero-star column collapses to
+    /// nothing and takes the knob's alignment with it, which puts a bus marker
+    /// half off the left edge of the phone.
+    /// </remarks>
+    private void DrawTrack(int? progress, Color colour)
+    {
+        _trackBlock.IsVisible = progress is not null;
+        if (progress is not int percent)
+        {
+            return;
+        }
+
+        double done = Math.Clamp(percent / 100.0, 0.02, 0.98);
+        _behind.Width = new GridLength(done, GridUnitType.Star);
+        _ahead.Width = new GridLength(1 - done, GridUnitType.Star);
+
+        _trackFill.Color = colour;
+        _knob.BackgroundColor = colour;
+    }
+
+    private Grid BuildTrack()
+    {
+        BoxView back = new()
+        {
+            HeightRequest = 6,
+            CornerRadius = new CornerRadius(3),
+            Color = Theme.Ink700,
+            VerticalOptions = LayoutOptions.Center,
+        };
+
+        Border stop = new()
+        {
+            HeightRequest = 20,
+            WidthRequest = 20,
+            Stroke = Theme.Ink600,
+            StrokeThickness = 4,
+            StrokeShape = new RoundRectangle { CornerRadius = 10 },
+            BackgroundColor = Theme.Ink900,
+            HorizontalOptions = LayoutOptions.End,
+            VerticalOptions = LayoutOptions.Center,
+        };
+
+        Grid track = new()
+        {
+            HeightRequest = 30,
+            ColumnDefinitions = { _behind, _ahead },
+        };
+
+        track.Add(back);
+        Grid.SetColumnSpan(back, 2);
+        track.Add(_trackFill);
+        track.Add(_knob);
+        track.Add(stop, 1);
+
+        return track;
+    }
+
+    private View Header()
+    {
+        Grid header = new()
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+            },
+            ColumnSpacing = 10,
+            HeightRequest = 34,
+        };
+
+        header.Add(_rider);
+        header.Add(_busChip, 1);
+        return header;
+    }
+
+    private View Meridiem() => new VerticalStackLayout
+    {
+        VerticalOptions = LayoutOptions.End,
+        Margin = new Thickness(6, 0, 0, 14),
+        Children = { _meridiem },
+    };
+
+    private View BandHolder() => new VerticalStackLayout
+    {
+        VerticalOptions = LayoutOptions.End,
+        Margin = new Thickness(0, 0, 0, 3),
+        Children = { _band },
+    };
+
+    private static Border Card(View content) => new()
+    {
+        BackgroundColor = Theme.Ink800,
+        Stroke = Colors.Transparent,
+        StrokeShape = new RoundRectangle { CornerRadius = 16 },
+        Padding = new Thickness(16, 15),
+        Content = content,
+    };
+
+    /// <summary>One fact: a name on the left, the value on the right.</summary>
+    private static Grid Row(string name, Label value, View? lamp = null)
+    {
+        Grid row = new()
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Auto),
+                new ColumnDefinition(GridLength.Star),
+            },
+            ColumnSpacing = 9,
+            Padding = new Thickness(0, 11),
+        };
+
+        if (lamp is not null)
+        {
+            row.Add(lamp);
+        }
+
+        row.Add(new Label { Text = name, FontSize = 14, TextColor = Theme.Text, VerticalOptions = LayoutOptions.Center }, 1);
+        row.Add(value, 2);
+        return row;
+    }
+
+    private static BoxView Rule() => new()
+    {
+        HeightRequest = 1,
+        Color = Theme.Ink700,
+    };
+
+    private static BoxView Dot() => new()
+    {
+        HeightRequest = 7,
+        WidthRequest = 7,
+        CornerRadius = new CornerRadius(4),
+        Color = Theme.Ink600,
+        VerticalOptions = LayoutOptions.Center,
+    };
+
+    private static BoxView Spacer(double height) => new()
+    {
+        HeightRequest = height,
+        Color = Colors.Transparent,
+    };
 
     /// <summary>When the morning ride is expected to reach school.</summary>
     private string SchoolSummary()
@@ -184,13 +498,12 @@ public sealed class BusPage : ContentPage
             return string.Empty;
         }
 
-        string ride = school.RideMinutes is int minutes ? $", about a {minutes} min ride" : string.Empty;
-        return $"At school around {school.Arrival.ToLocalTime():h:mm tt}{ride} "
-            + $"(from {school.Samples} drop-off scan(s)).";
+        string ride = school.RideMinutes is int minutes ? $" · {minutes} min ride" : string.Empty;
+        return $"{school.Arrival.ToLocalTime():h:mm tt}{ride}";
     }
 
-    /// <summary>The unchanging facts, small and last: bus, school, timetable.</summary>
-    private static string RiderSummary(Student? rider)
+    /// <summary>The unchanging facts, small and last: school and timetable.</summary>
+    private static string FooterSummary(Student? rider)
     {
         if (rider is null)
         {
@@ -198,11 +511,6 @@ public sealed class BusPage : ContentPage
         }
 
         List<string> parts = [];
-
-        if (rider.BusNumber is { Length: > 0 } bus)
-        {
-            parts.Add($"Bus {bus}");
-        }
 
         if (rider.SchoolName is { Length: > 0 } school)
         {
@@ -235,11 +543,11 @@ public sealed class BusPage : ContentPage
     private void ShowEstimate(bool visible)
     {
         _arrival.IsVisible = visible;
+        _meridiem.IsVisible = visible;
         _countdown.IsVisible = visible;
         _band.IsVisible = visible;
-        _progress.IsVisible = visible;
-        _confidence.IsVisible = visible;
-        _school.IsVisible = visible;
+        _trackBlock.IsVisible = visible;
+        _confidenceCard.IsVisible = visible;
     }
 
     private static string StageTitle(JourneyStage stage, string? name)
@@ -309,14 +617,14 @@ public sealed class BusPage : ContentPage
         List<string> parts = [];
         if (pickup is not null)
         {
-            parts.Add($"on at {pickup.Timestamp.ToLocalTime():h:mm tt}");
+            parts.Add($"on {pickup.Timestamp.ToLocalTime():h:mm tt}");
         }
 
         if (dropoff is not null)
         {
-            parts.Add($"off at {dropoff.Timestamp.ToLocalTime():h:mm tt}");
+            parts.Add($"off {dropoff.Timestamp.ToLocalTime():h:mm tt}");
         }
 
-        return parts.Count == 0 ? "No badge scans today." : $"Scans: {string.Join(", ", parts)}.";
+        return parts.Count == 0 ? "none today" : string.Join(", ", parts);
     }
 }

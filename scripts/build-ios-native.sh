@@ -55,7 +55,7 @@ build_slice() {
 
 bool wwtb_activities_enabled(void);
 void wwtb_set_token_callback(void (*callback)(const char *));
-bool wwtb_start_activity(const char *journeyId, const char *riderName, int64_t childId, const char *stateJson);
+bool wwtb_start_activity(const char *journeyId, const char *riderName, const char *busNumber, int64_t childId, const char *stateJson);
 bool wwtb_update_activity(const char *stateJson);
 bool wwtb_end_activity(const char *stateJson);
 const char *wwtb_current_journey(void);

@@ -14,7 +14,11 @@
          bridge. None of our own code is unsafe. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
-    <ApplicationTitle>When Will The Bus</ApplicationTitle>
+    <!-- The HOME SCREEN label, not the App Store listing (which is set in App
+         Store Connect). iOS renders "When Will The Bus" under the icon as an
+         unspaced "WhenWillTheBus", and the short word is the one a parent's
+         thumb is hunting for anyway. -->
+    <ApplicationTitle>Bus</ApplicationTitle>
 
     <!-- ApplicationId comes from Directory.Build.props at the repository root,
          which is the single place it is defined. -->
@@ -59,7 +63,19 @@
 
   <ItemGroup>
     <MauiIcon Include="Resources\AppIcon\appicon.svg" />
-    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#1B1B1F" BaseSize="128,128" />
+
+    <!-- Color must match the ground baked into appicon.svg (#0E1117), because
+         the splash mark is drawn without one and cuts straight through to this.
+         Two shades of almost-black read as a flicker on launch. -->
+    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#0E1117" BaseSize="176,176" />
+
+    <!-- Tab-bar icons. Declared explicitly: EnableDefaultMauiItems is true here
+         and the SDK still globs nothing into MauiImage, so leaving this to the
+         defaults produces no imagesets, no build error, and a tab bar that
+         quietly renders as text only. To check what is actually included, run
+         dotnet build on this project asking for the MauiImage item group with
+         the getItem switch. -->
+    <MauiImage Include="Resources\Images\*.svg" />
   </ItemGroup>
 
   <ItemGroup>

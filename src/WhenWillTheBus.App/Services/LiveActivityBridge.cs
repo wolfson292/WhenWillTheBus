@@ -30,7 +30,7 @@ public static partial class LiveActivityBridge
 
     [LibraryImport("__Internal", StringMarshalling = StringMarshalling.Utf8)]
     [return: MarshalAs(UnmanagedType.I1)]
-    private static partial bool wwtb_start_activity(string journeyId, string riderName, long childId, string stateJson);
+    private static partial bool wwtb_start_activity(string journeyId, string riderName, string busNumber, long childId, string stateJson);
 
     [LibraryImport("__Internal", StringMarshalling = StringMarshalling.Utf8)]
     [return: MarshalAs(UnmanagedType.I1)]
@@ -108,8 +108,16 @@ public static partial class LiveActivityBridge
         }
     }
 
-    public static bool Start(string journeyId, string riderName, long childId, Journey journey, ArrivalPrediction? prediction, RiderInfo? info, DateTimeOffset now) =>
-        wwtb_start_activity(journeyId, riderName, childId, Serialise(journey, prediction, info, now));
+    /// <summary>
+    /// Start the card for one journey.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="busNumber"/> crosses as an empty string rather than null
+    /// when the roster has none: the Swift side reads it with
+    /// <c>String(cString:)</c>, which has no null to give back.
+    /// </remarks>
+    public static bool Start(string journeyId, string riderName, string? busNumber, long childId, Journey journey, ArrivalPrediction? prediction, RiderInfo? info, DateTimeOffset now) =>
+        wwtb_start_activity(journeyId, riderName, busNumber ?? string.Empty, childId, Serialise(journey, prediction, info, now));
 
     public static bool Update(Journey journey, ArrivalPrediction? prediction, RiderInfo? info, DateTimeOffset now) =>
         wwtb_update_activity(Serialise(journey, prediction, info, now));

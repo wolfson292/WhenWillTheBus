@@ -122,7 +122,7 @@ public sealed class HistoryPage : ContentPage
             text += $" {late} of those ran LATE by more than a minute.";
         }
 
-        return new Label { Text = text, FontSize = 12, TextColor = Colors.Gray, Margin = new Thickness(0, 2, 0, 6) };
+        return new Label { Text = text, FontSize = 12, TextColor = Theme.TextDim, Margin = new Thickness(0, 2, 0, 6) };
     }
 
     /// <summary>The learned time against the published one — the point of the page.</summary>
@@ -186,7 +186,7 @@ public sealed class HistoryPage : ContentPage
         {
             Text = $"{local:ddd d MMM}   {local:h:mm tt}{tail}",
             FontSize = 13,
-            TextColor = arrival.Substitute ? Colors.Gray : Colors.Black,
+            TextColor = arrival.Substitute ? Theme.TextDim : Theme.Text,
             Margin = new Thickness(0, 1),
         };
     }
@@ -195,5 +195,5 @@ public sealed class HistoryPage : ContentPage
         new() { Text = text, FontSize = 17, FontAttributes = FontAttributes.Bold, Margin = new Thickness(0, 14, 0, 2) };
 
     private static Label Note(string text) =>
-        new() { Text = text, FontSize = 12, TextColor = Colors.Gray, Margin = new Thickness(0, 0, 0, 6) };
+        new() { Text = text, FontSize = 12, TextColor = Theme.TextDim, Margin = new Thickness(0, 0, 0, 6) };
 }

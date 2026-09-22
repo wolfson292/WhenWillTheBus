@@ -28,7 +28,7 @@ public sealed class ScansPage : ContentPage
         Text = "No scans yet.\n\nScans appear about five minutes after they happen, and the "
             + "school's own feed only ever returns today — everything older is kept by this app.",
         FontSize = 13,
-        TextColor = Colors.Gray,
+        TextColor = Theme.TextDim,
         Padding = new Thickness(20),
         IsVisible = false,
     };
@@ -82,9 +82,9 @@ public sealed class ScansPage : ContentPage
             Children =
             {
                 Bound(new Label { FontSize = 16 }, Label.TextProperty, nameof(ScanEvent.Kind), Direction),
-                Bound(new Label { FontSize = 13, TextColor = Colors.Gray }, Label.TextProperty,
+                Bound(new Label { FontSize = 13, TextColor = Theme.TextDim }, Label.TextProperty,
                     nameof(ScanEvent.Timestamp), When),
-                Bound(new Label { FontSize = 12, TextColor = Colors.Gray }, Label.TextProperty,
+                Bound(new Label { FontSize = 12, TextColor = Theme.TextDim }, Label.TextProperty,
                     nameof(ScanEvent.Location), Place),
             },
         };
@@ -96,7 +96,7 @@ public sealed class ScansPage : ContentPage
                 FontSize = 13,
                 FontAttributes = FontAttributes.Bold,
                 Padding = new Thickness(20, 12, 20, 4),
-                BackgroundColor = Color.FromArgb("#F2F2F7"),
+                BackgroundColor = Theme.Ink800,
             },
             Label.TextProperty,
             nameof(ScanDay.Day),
