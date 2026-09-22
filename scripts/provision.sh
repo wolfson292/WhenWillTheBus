@@ -95,12 +95,14 @@ else
   DESTINATION=(-destination "generic/platform=iOS")
 fi
 
-# ARCHIVE, not BUILD. Automatic signing chooses the profile from the ACTION:
-# building for a device asks for a development profile even with a distribution
-# certificate sitting right there, so a plain build can never mint what
-# TestFlight needs.
+# ARCHIVE, then EXPORT. Neither alone is enough, and the archive is the
+# misleading half: it SUCCEEDS while signing with the development profile,
+# leaving a green build and no App Store profile anywhere. Automatic signing
+# only reaches for a distribution profile when it is asked to export for
+# app-store-connect, so that step is what actually mints one.
+ARCHIVE="ios/build/prov/ProvisioningHost.xcarchive"
 if [ "$DISTRIBUTION" = "1" ]; then
-  ACTION=(archive -archivePath ios/build/prov/ProvisioningHost.xcarchive)
+  ACTION=(archive -archivePath "$ARCHIVE")
 else
   ACTION=(build)
 fi
@@ -171,9 +173,43 @@ CAPABILITY
     exit 1
   }
 
+if [ "$DISTRIBUTION" = "1" ]; then
+  echo "==> Exporting for app-store-connect (this is what mints the profiles)"
+  EXPORT_OPTIONS="$ROOT/ios/build/prov/export-options.plist"
+  cat > "$EXPORT_OPTIONS" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>teamID</key><string>$DEVELOPMENT_TEAM</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>destination</key><string>export</string>
+  <key>uploadSymbols</key><false/>
+</dict>
+</plist>
+PLIST
+
+  # The stub's own .ipa is thrown away -- only the profiles it causes to be
+  # minted are wanted, and the real app is built by dotnet, not by this.
+  xcodebuild -exportArchive \
+    -archivePath "$ARCHIVE" \
+    -exportPath ios/build/prov/export \
+    -exportOptionsPlist "$EXPORT_OPTIONS" \
+    -allowProvisioningUpdates >> "$ROOT/ios/build/provision.log" 2>&1 || {
+      echo "error: export failed. Last lines:" >&2
+      grep -iE "error|does not (support|have)|capability" "$ROOT/ios/build/provision.log" | sort -u | tail -10 >&2
+      exit 7
+    }
+fi
+
 echo
 DIR="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+# In distribution mode this starts FAILED and must be earned by finding a
+# production profile; otherwise it starts passing and is cleared by a profile
+# that lacks push.
 PUSH_OK=1
+[ "$DISTRIBUTION" = "1" ] && PUSH_OK=0
 GROUP_OK=1
 for p in "$DIR"/*.mobileprovision; do
   [ -e "$p" ] || continue
@@ -187,7 +223,16 @@ for p in "$DIR"/*.mobileprovision; do
     # warn for ever about something that is correct.
     *".$WWTB_BUNDLE_ID")
       printf "  %-55s push=%-14s group=%s\n" "$APPID" "${APS:-NONE (required)}" "${GRP:-NONE (required)}"
-      [ -n "$APS" ] || PUSH_OK=0
+      # In distribution mode ONLY a production profile counts. The development
+      # one is still sitting in the same directory and its aps-environment is
+      # non-empty, so a bare "is there a value" check passes on the wrong
+      # profile -- which is how an archive that never minted an App Store
+      # profile reported itself as fine.
+      if [ "$DISTRIBUTION" = "1" ]; then
+        [ "$APS" = "production" ] && PUSH_OK=1
+      else
+        [ -n "$APS" ] || PUSH_OK=0
+      fi
       [ -n "$GRP" ] || GROUP_OK=0
       ;;
     *"$WWTB_BUNDLE_ID".*)
@@ -212,6 +257,22 @@ Enable App Groups on BOTH identifiers, ticking the group under Edit:
 
 GROUPS
   exit 5
+fi
+
+if [ "$PUSH_OK" = "0" ] && [ "$DISTRIBUTION" = "1" ]; then
+  cat >&2 <<'PRODWARN'
+
+WARNING: no App Store profile with aps-environment=production was minted.
+
+The archive can succeed while signing with the DEVELOPMENT profile, which
+leaves nothing for a TestFlight build to use. A production entitlement the
+profile does not grant is then stripped in silence, and every Live Activity
+on every TestFlight phone stops updating with no error anywhere.
+
+Check ios/build/provision.log for the export step.
+
+PRODWARN
+  exit 2
 fi
 
 if [ "$PUSH_OK" = "0" ]; then

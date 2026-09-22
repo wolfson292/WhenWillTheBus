@@ -10,6 +10,11 @@
 # Usage:
 #   scripts/build-widget.sh                 # simulator, Debug host
 #   scripts/build-widget.sh device Release  # device, needs DEVELOPMENT_TEAM
+#
+# Set WWTB_DISTRIBUTION=1 for a TestFlight build. An embedded extension must be
+# signed the SAME way as its host, and automatic signing picks DEVELOPMENT for a
+# plain build however the host is signed -- which produces an .ipa Apple rejects
+# at upload with ITMS-90035, after the upload.
 
 set -euo pipefail
 
@@ -32,6 +37,39 @@ if [ "$DESTINATION" = "device" ]; then
   fi
   SIGNING=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES)
   export WWTB_TEAM="$DEVELOPMENT_TEAM"
+
+  if [ "${WWTB_DISTRIBUTION:-0}" = "1" ]; then
+    # Located now so the build does not run before failing. The profile Xcode
+    # mints is found by its ENTITLEMENTS, not its name -- an App Store profile
+    # is the one with get-task-allow FALSE -- because a build that breaks when
+    # Apple renames a profile breaks for no reason anybody can see.
+    WANT="$DEVELOPMENT_TEAM.$WWTB_BUNDLE_ID.BusWidget"
+    DIST_PROFILE=""
+    for prof in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"/*.mobileprovision; do
+      [ -e "$prof" ] || continue
+      PLIST=$(security cms -D -i "$prof" 2>/dev/null) || continue
+      APPID=$(echo "$PLIST" | plutil -extract Entitlements.application-identifier raw - 2>/dev/null) || continue
+      TASK=$(echo "$PLIST" | plutil -extract Entitlements.get-task-allow raw - 2>/dev/null || echo true)
+      if [ "$APPID" = "$WANT" ] && [ "$TASK" = "false" ]; then
+        DIST_PROFILE="$prof"
+        break
+      fi
+    done
+
+    [ -n "$DIST_PROFILE" ] || {
+      echo "error: no App Store profile for $WANT." >&2
+      echo "       Run: DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM scripts/provision.sh --distribution" >&2
+      exit 1
+    }
+
+    DIST_IDENTITY=$(security find-identity -v -p codesigning \
+      | sed -n 's/.*"\(Apple Distribution: .*\)"/\1/p' | head -1)
+    [ -n "$DIST_IDENTITY" ] || {
+      echo "error: no Apple Distribution certificate in the keychain." >&2
+      exit 1
+    }
+  fi
+
 else
   SDK="iphonesimulator"
   RID="iossimulator-arm64"
@@ -71,6 +109,30 @@ echo "==> Embedding into $(basename "$APP")/PlugIns"
 mkdir -p "$APP/PlugIns"
 rm -rf "$APP/PlugIns/BusWidget.appex"
 cp -R "$APPEX" "$APP/PlugIns/"
+
+# RE-SIGNED, not built signed. Xcode will not use an Xcode-managed profile in
+# manual mode, and a profile passed on the command line lands on every target in
+# the project rather than this one -- so the distribution signature is applied
+# here instead, exactly as Xcode's own export step applies it.
+#
+# The entitlements come FROM the profile, which is what makes them consistent
+# with it: an entitlement the profile does not grant is stripped in silence.
+if [ "${WWTB_DISTRIBUTION:-0}" = "1" ]; then
+  echo "==> Re-signing the extension for distribution"
+  EMBEDDED="$APP/PlugIns/BusWidget.appex"
+  cp "$DIST_PROFILE" "$EMBEDDED/embedded.mobileprovision"
+
+  ENT="$ROOT/ios/build/BusWidget.dist.entitlements"
+  security cms -D -i "$DIST_PROFILE" \
+    | plutil -extract Entitlements xml1 -o "$ENT" -
+
+  codesign --force --timestamp=none \
+    --sign "$DIST_IDENTITY" \
+    --entitlements "$ENT" \
+    "$EMBEDDED"
+
+  codesign --verify --strict "$EMBEDDED"
+fi
 
 APP_ID=$(plutil -extract CFBundleIdentifier raw "$APP/Info.plist")
 EXT_ID=$(plutil -extract CFBundleIdentifier raw "$APP/PlugIns/BusWidget.appex/Info.plist")
