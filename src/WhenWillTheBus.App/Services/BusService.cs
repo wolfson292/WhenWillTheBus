@@ -191,9 +191,31 @@ public sealed class BusService : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// How often this phone re-introduces itself to the worker.
+    /// </summary>
+    /// <remarks>
+    /// Rare on purpose. The point is to show WHICH phones are connected and
+    /// roughly when each was last heard from, and a chattier heartbeat would
+    /// only be a more precise answer to a question nobody asks — while adding
+    /// a request to every poll of a run.
+    /// </remarks>
+    private static readonly TimeSpan HelloInterval = TimeSpan.FromMinutes(30);
+
+    private DateTimeOffset _saidHelloAt = DateTimeOffset.MinValue;
+
     private async Task<TimeSpan> TickAsync(CancellationToken token)
     {
         DateTimeOffset now = _clock.Now;
+
+        // Before the work, so a phone that is failing at everything else still
+        // appears on the worker's page — which is exactly the phone somebody
+        // will be trying to find there.
+        if (now - _saidHelloAt >= HelloInterval)
+        {
+            _saidHelloAt = now;
+            _ = await _server.HelloAsync(token);
+        }
 
         if (_workerFed)
         {

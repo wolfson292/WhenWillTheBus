@@ -4,7 +4,8 @@
     "projects": [
       "src\\WhenWillTheBus.Core\\WhenWillTheBus.Core.csproj",
       "src\\WhenWillTheBus.Server\\WhenWillTheBus.Server.csproj",
-      "tests\\WhenWillTheBus.Core.Tests\\WhenWillTheBus.Core.Tests.csproj"
+      "tests\\WhenWillTheBus.Core.Tests\\WhenWillTheBus.Core.Tests.csproj",
+      "tests\\WhenWillTheBus.Server.Tests\\WhenWillTheBus.Server.Tests.csproj"
     ]
   }
 }

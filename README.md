@@ -151,6 +151,26 @@ Check it:
 curl -s -H "Authorization: Bearer $WWTB_API_KEY" http://localhost:8080/status
 ```
 
+### The status page
+
+`/manage` is the same information as a page rather than as JSON: what each rider's
+prediction is and how it was reached, which phones are talking to the worker, and
+which Live Activity cards are registered. Open it in a browser — it accepts HTTP
+Basic as well as a bearer token, so a person can reach it. Any username; the
+password is the API key.
+
+It shows **no coordinates**, for the same reason `/status` shows none.
+
+A phone appears there once it has introduced itself, which it does when the app
+opens with a worker configured. What it sends is bounded by what Apple permits:
+its `identifierForVendor` (scoped to this vendor, reissued when the last of our
+apps leaves the device), its model, its iOS version, its app version, and a name
+its owner typed in Settings. `UIDevice.name` has returned a generic model name
+since iOS 16 without an entitlement Apple grants for managed fleets, so the name
+can only come from a person. Nothing else identifying is sent: no advertising
+identifier, no UDID or serial, no MAC address, no phone number, no account, and
+no location.
+
 ### Reaching it from outside
 
 Live Activity pushes do NOT need this: those go worker → Apple → phone, all

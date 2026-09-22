@@ -54,4 +54,7 @@ public sealed class MonitorOptions
     public string HistoryPath => Path.Combine(DataDirectory, "history.json");
 
     public string RegistryPath => Path.Combine(DataDirectory, "activities.json");
+
+    /// <summary>The phones that have introduced themselves, for the status page.</summary>
+    public string ClientsPath => Path.Combine(DataDirectory, "clients.json");
 }

@@ -30,6 +30,7 @@ public sealed class BusMonitor(
     PredictionEngine engine,
     LiveActivityPublisher publisher,
     DeviceRegistry registry,
+    ClientRegistry clients,
     LocalClock clock,
     IOptions<MonitorOptions> options,
     ILogger<BusMonitor> logger) : BackgroundService
@@ -88,6 +89,7 @@ public sealed class BusMonitor(
     {
         Directory.CreateDirectory(_options.DataDirectory);
         await registry.LoadAsync(_options.RegistryPath, token).ConfigureAwait(false);
+        await clients.LoadAsync(_options.ClientsPath, token).ConfigureAwait(false);
 
         try
         {
@@ -181,6 +183,11 @@ public sealed class BusMonitor(
         if (registry.Prune(now) > 0)
         {
             await registry.SaveAsync(token).ConfigureAwait(false);
+        }
+
+        if (clients.Prune(now) > 0)
+        {
+            await clients.SaveAsync(token).ConfigureAwait(false);
         }
 
         return anyWatched ? _options.BusPoll : _options.IdlePoll;

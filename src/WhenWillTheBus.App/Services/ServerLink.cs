@@ -66,6 +66,41 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
         }
     }
 
+    /// <summary>
+    /// Tell the worker which phone this is. Safe to call repeatedly.
+    /// </summary>
+    /// <remarks>
+    /// Sent SEPARATELY from the activity registration rather than folded into
+    /// it, because the two answer different questions. A phone with no card
+    /// running is exactly the phone somebody is trying to diagnose, and one
+    /// that only announced itself alongside an activity would be invisible for
+    /// the whole of the day it was failing.
+    /// </remarks>
+    public async Task<bool> HelloAsync(CancellationToken cancellationToken = default)
+    {
+        (string Url, string Key)? server = await credentials.ReadServerAsync();
+        if (server is null || DeviceIdentity.HelloJson() is not string body)
+        {
+            return false;
+        }
+
+        using HttpRequestMessage request = new(HttpMethod.Post, $"{server.Value.Url}/clients/hello")
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", server.Value.Key);
+
+        try
+        {
+            using HttpResponseMessage response = await http.SendAsync(request, cancellationToken);
+            return response.IsSuccessStatusCode;
+        }
+        catch (HttpRequestException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>Fetch the history the worker has learned, or null if unavailable.</summary>
     /// <remarks>
     /// The worker is always on and the phone is not, so this is how the phone

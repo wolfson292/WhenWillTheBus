@@ -25,6 +25,7 @@ public sealed class SignInPage : ContentPage
     private readonly Entry _password = new() { Placeholder = "Password", IsPassword = true };
     private readonly Entry _serverUrl = new() { Placeholder = "http://192.168.1.10:8471", Keyboard = Keyboard.Url };
     private readonly Entry _serverKey = new() { Placeholder = "Worker API key", IsPassword = true };
+    private readonly Entry _deviceLabel = new() { Placeholder = "This phone's name, e.g. Angela's iPhone" };
     private readonly Label _status = new() { FontSize = 13, TextColor = Colors.Gray };
 
     public SignInPage(CredentialStore credentials, ServerLink server, BusService bus)
@@ -61,6 +62,15 @@ public sealed class SignInPage : ContentPage
                     Note("Sends a link that configures another phone in one tap. It carries the "
                         + "access key, so send it the way you would send a password."),
 
+                    Heading("This phone"),
+                    Note("A name for the worker's status page, so its list of connected phones "
+                        + "reads as people rather than identifiers. iOS stopped letting apps "
+                        + "read the device name in iOS 16, so it can only come from here. The "
+                        + "phone also sends its model, its iOS version and the app version — "
+                        + "nothing that identifies a person, and never its location."),
+                    _deviceLabel,
+                    Action("Save this phone's name", OnSaveLabel),
+
                     Heading("History"),
                     Note("Predictions work from two route samples, so a fortnight of history is "
                         + "the difference between a useful estimate today and one in October. "
@@ -93,12 +103,27 @@ public sealed class SignInPage : ContentPage
             _email.Text = account.Email;
         }
 
+        _deviceLabel.Text = DeviceIdentity.Label;
+
         (string Url, string Key)? worker = await _credentials.ReadServerAsync();
         if (worker is not null)
         {
             _serverUrl.Text = worker.Value.Url;
             _serverKey.Text = worker.Value.Key;
         }
+    }
+
+    private async void OnSaveLabel(object? sender, EventArgs e)
+    {
+        DeviceIdentity.Label = _deviceLabel.Text;
+
+        // Sent straight away rather than at the next heartbeat. Somebody who
+        // has just typed a name is about to go and look for it.
+        bool reached = await _server.HelloAsync();
+        _status.Text = reached
+            ? $"This phone is now \"{DeviceIdentity.Label}\" on the worker."
+            : "Saved on this phone. The worker could not be reached, so it will "
+              + "pick the name up at the next check-in.";
     }
 
     private async void OnSaveAccount(object? sender, EventArgs e)

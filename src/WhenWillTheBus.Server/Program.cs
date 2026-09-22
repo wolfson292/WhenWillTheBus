@@ -97,9 +97,12 @@ builder.Services.AddHttpClient<ApnsClient>(http =>
 });
 
 builder.Services.AddSingleton<DeviceRegistry>();
+builder.Services.AddSingleton<ClientRegistry>();
 builder.Services.AddSingleton<LiveActivityPublisher>();
 builder.Services.AddSingleton<BusMonitor>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<BusMonitor>());
+
+DateTimeOffset started = DateTimeOffset.UtcNow;
 
 WebApplication app = builder.Build();
 
@@ -122,14 +125,46 @@ app.Use(async (context, next) =>
         return;
     }
 
+    // Bearer for the app, Basic for a browser. The management page is meant to
+    // be opened by a person, and a person cannot set a header -- while putting
+    // the key in the query string would write it into history, bookmarks and
+    // every access log between here and the sofa.
     string presented = context.Request.Headers.Authorization.ToString();
-    const string Prefix = "Bearer ";
+    string? offered = null;
 
-    if (!presented.StartsWith(Prefix, StringComparison.Ordinal)
+    if (presented.StartsWith("Bearer ", StringComparison.Ordinal))
+    {
+        offered = presented["Bearer ".Length..];
+    }
+    else if (presented.StartsWith("Basic ", StringComparison.Ordinal))
+    {
+        try
+        {
+            // The username is ignored. There is one credential here, and asking
+            // for a second invented one would only be something else to forget.
+            string pair = Encoding.UTF8.GetString(Convert.FromBase64String(presented["Basic ".Length..]));
+            int colon = pair.IndexOf(':', StringComparison.Ordinal);
+            offered = colon < 0 ? pair : pair[(colon + 1)..];
+        }
+        catch (FormatException)
+        {
+            offered = null;
+        }
+    }
+
+    if (offered is null
         || !CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(presented[Prefix.Length..]),
+            Encoding.UTF8.GetBytes(offered),
             Encoding.UTF8.GetBytes(apiKey)))
     {
+        // Only the page challenges. A 401 carrying this header makes a browser
+        // prompt, which is right for a person and wrong for the app -- it would
+        // turn a bad key into a dialog nobody is there to answer.
+        if (context.Request.Path.StartsWithSegments("/manage"))
+        {
+            context.Response.Headers.WWWAuthenticate = "Basic realm=\"When Will The Bus\", charset=\"UTF-8\"";
+        }
+
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         return;
     }
@@ -411,6 +446,61 @@ app.MapPost("/apns/check", async (ApnsClient apns, IOptions<ApnsOptions> options
     });
 });
 
+// A phone introducing itself, so the management page can say WHICH phones are
+// talking to this worker rather than only how many.
+//
+// What it may send is decided by Apple, not by us. identifierForVendor is the
+// one device identifier an app is permitted to use here -- it is scoped to this
+// vendor, and iOS reissues it once the last of our apps leaves the device. The
+// label is typed by the owner because UIDevice.name has returned a generic
+// model name since iOS 16 without an entitlement Apple grants for managed
+// fleets. Nothing else identifying is accepted: no advertising identifier, no
+// UDID or serial, no MAC address, no phone number, no account.
+app.MapPost("/clients/hello", async (
+    ClientHello hello,
+    ClientRegistry clients,
+    LocalClock clock,
+    CancellationToken token) =>
+{
+    if (string.IsNullOrWhiteSpace(hello.Id))
+    {
+        return Results.BadRequest(new { error = "id is required" });
+    }
+
+    DateTimeOffset now = clock.Now;
+    ClientIdentity known = clients.Greet(
+        new ClientIdentity(
+            hello.Id,
+            Trimmed(hello.Label, 40),
+            Trimmed(hello.Model, 40),
+            Trimmed(hello.SystemVersion, 20),
+            Trimmed(hello.AppVersion, 20),
+            Trimmed(hello.Build, 20),
+            !string.Equals(hello.Environment, "production", StringComparison.OrdinalIgnoreCase),
+            now,
+            now,
+            1),
+        now);
+
+    await clients.SaveAsync(token);
+    return Results.Ok(new { known.Id, known.Label, known.FirstSeen, known.Visits });
+});
+
+// The same thing as JSON, for anything that would rather not scrape a page.
+app.MapGet("/clients", (ClientRegistry clients) => Results.Ok(clients.All));
+
+// The management page. A browser reaches it with Basic auth; everything on it
+// is also available as JSON from /status, /rider/state and /clients.
+app.MapGet("/manage", (
+    BusMonitor monitor,
+    PredictionEngine engine,
+    ClientRegistry clients,
+    DeviceRegistry registry,
+    LocalClock clock) => Results.Content(
+        ManagementPage.Render(
+            monitor.Students, engine, clients.All, registry.All, clock, started, clock.Now),
+        "text/html; charset=utf-8"));
+
 // What the worker knows, WITHOUT coordinates. A status page is a convenience;
 // leaking a child's position into one would not be.
 app.MapGet("/status", (BusMonitor monitor, PredictionEngine engine, LocalClock clock) =>
@@ -440,6 +530,37 @@ app.MapGet("/status", (BusMonitor monitor, PredictionEngine engine, LocalClock c
 
 app.Run();
 return 0;
+
+// Bounded on the way in. These are display strings from an unauthenticated
+// shape, and a label of a megabyte would be stored, persisted and rendered.
+static string? Trimmed(string? value, int limit)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return null;
+    }
+
+    string clean = value.Trim();
+    return clean.Length <= limit ? clean : clean[..limit];
+}
+
+/// <summary>
+/// What a phone tells the worker about itself.
+/// </summary>
+/// <remarks>
+/// Every field is optional except the identifier, and every field is a claim
+/// rather than a fact — this is a phone describing itself over the network.
+/// Nothing here is trusted for anything but display, which is why none of it
+/// is used for authorisation: the bearer key decides that.
+/// </remarks>
+internal sealed record ClientHello(
+    string Id,
+    string? Label,
+    string? Model,
+    string? SystemVersion,
+    string? AppVersion,
+    string? Build,
+    string? Environment);
 
 /// <summary>What a phone sends after starting a Live Activity.</summary>
 /// <param name="Environment">"sandbox" or "production"; sandbox when a build did not say.</param>
