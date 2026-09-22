@@ -91,18 +91,33 @@ cp .env.example .env
 ./scripts/print-config.sh                 # gives you APNS_BUNDLE_ID
 ```
 
-Fill in `.env`, and note:
+Fill in `.env`.
+
+**One worker serves both environments at once.** A development build registers
+against Apple's sandbox and a TestFlight build against production; a token from
+one is rejected outright by the other, always as a silent non-delivery. That
+would make a household with a development phone and TestFlight on everyone
+else's impossible to serve — so the environment is chosen **per activity**, not
+once for the worker. The app reports which one it belongs to when it registers,
+and `ApnsOptions.HostFor` picks the host from that. The signing key is the same
+either way; only the host differs.
 
 ```
 APNS_SANDBOX=true
 ```
 
-**A development build registers against Apple's sandbox.** A token from one
-environment is rejected outright by the other, and it presents as a silent
-non-delivery — so if pushes vanish with no error, check this first. Set it
-`false` only for TestFlight and the App Store, which also need the production
-entitlement (`Entitlements.Device.Release.plist`, already wired to Release
-builds).
+This is now only the **fallback** for a registration that did not say — which
+means an app built before the field existed. It does not override an activity
+that reported its own environment, so leaving it `true` does not break
+TestFlight and leaving it `false` does not break a development phone.
+
+What the app claims comes from `APNS_PRODUCTION`, defined in the `.csproj`
+alongside the entitlement, so which environment the token is *minted* in and
+which one the app *claims* are decided in the same place. `build-testflight.sh`
+refuses to package a build where they disagree.
+
+`/manage` lists every phone and card with the environment it registered under —
+the quickest way to confirm a TestFlight install really did say `production`.
 
 ```bash
 docker compose up -d

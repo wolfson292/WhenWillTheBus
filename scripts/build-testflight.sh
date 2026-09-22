@@ -55,6 +55,35 @@ echo "==> APNs          production"
 echo "==> 1/4 ActivityKit bridge"
 ./scripts/build-ios-native.sh > /dev/null
 
+# A TestFlight build must CLAIM production, not just be entitled to it.
+#
+# -p:ApnsEnvironment=production picks the production entitlement, so the token
+# is minted in production. What the app then TELLS the worker comes from
+# #if APNS_PRODUCTION (ServerLink, DeviceIdentity), which needs the constant to
+# be defined as well. That wiring lived only in the .csproj and was once missing
+# entirely: every TestFlight build reported "sandbox", the worker pushed real
+# tokens to api.sandbox.push.apple.com, and Apple dropped them without a word.
+#
+# Asked here because there is no other moment it gets asked. Nothing fails, no
+# log line appears, and the only symptom is a card that never moves on somebody
+# else's phone.
+echo "==> Checking the build will claim production"
+CONSTANTS=$(dotnet build src/WhenWillTheBus.App \
+  -c Release -p:RuntimeIdentifier=ios-arm64 -p:ApnsEnvironment=production \
+  --getProperty:DefineConstants 2>/dev/null)
+
+case "$CONSTANTS" in
+  *APNS_PRODUCTION*) echo "    APNS_PRODUCTION defined" ;;
+  *)
+    echo "error: APNS_PRODUCTION is not defined for a production build." >&2
+    echo "       The app would register its push tokens as 'sandbox' and the" >&2
+    echo "       worker would push them to the sandbox host, which Apple" >&2
+    echo "       silently drops. See DefineConstants in" >&2
+    echo "       src/WhenWillTheBus.App/WhenWillTheBus.App.csproj." >&2
+    exit 1
+    ;;
+esac
+
 # THE APP BUNDLE FIRST, then the widget into it, then the package. The widget
 # step embeds into an existing .app and fails if there is not one -- so running
 # it before anything had been built worked only while a bundle was lying around

@@ -52,6 +52,21 @@
     <ApnsEnvironment Condition="'$(ApnsEnvironment)' == ''">development</ApnsEnvironment>
     <CodesignEntitlements Condition="'$(ApnsEnvironment)' == 'production'">Platforms/iOS/Entitlements.Device.Production.plist</CodesignEntitlements>
     <CodesignEntitlements Condition="'$(ApnsEnvironment)' != 'production'">Platforms/iOS/Entitlements.Device.Development.plist</CodesignEntitlements>
+
+    <!-- THE APP HAS TO TELL THE WORKER WHICH ENVIRONMENT ITS TOKEN CAME FROM.
+         One worker serves a TestFlight household alongside a development phone,
+         and it picks the APNs host per activity from what the app reported at
+         registration (ServerLink.RegisterActivityAsync, DeviceIdentity.Environment).
+
+         Both of those read #if APNS_PRODUCTION. Without this line nothing ever
+         defines it, so a TestFlight build claims "sandbox", the worker pushes
+         its production tokens to api.sandbox.push.apple.com, and Apple drops
+         them — no error on the worker, no card on the phone.
+
+         It sits beside CodesignEntitlements deliberately: the entitlement
+         decides which environment the token is MINTED in, this decides which
+         one the app CLAIMS, and the two disagreeing is undebuggable. -->
+    <DefineConstants Condition="'$(ApnsEnvironment)' == 'production'">$(DefineConstants);APNS_PRODUCTION</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
