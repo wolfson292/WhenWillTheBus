@@ -11,19 +11,54 @@
 #
 # This REGISTERS THE DEVICE and CREATES APP IDs in your Apple Developer account.
 #
-# Usage:  DEVELOPMENT_TEAM=XXXXXXXXXX scripts/provision.sh
+# Usage:  DEVELOPMENT_TEAM=XXXXXXXXXX scripts/provision.sh [--distribution]
+#
+# --distribution mints the APP STORE profiles a TestFlight build needs instead
+# of the development ones. They are a different kind of profile, not a variant:
+# they carry aps-environment=production and no get-task-allow, and automatic
+# signing only reaches for them when the action is ARCHIVE. Building for a
+# device and archiving therefore mint different things from the same stub.
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+DISTRIBUTION=0
+[ "${1:-}" = "--distribution" ] && DISTRIBUTION=1
+
 [ -n "${DEVELOPMENT_TEAM:-}" ] || { echo "error: DEVELOPMENT_TEAM is not set. Run scripts/team-id.sh." >&2; exit 1; }
+
+# An App Store profile cannot be minted without a distribution certificate, and
+# the failure it produces names neither. Checked up front, because the archive
+# takes minutes to get there.
+if [ "$DISTRIBUTION" = "1" ] && ! security find-identity -v -p codesigning | grep -q "Apple Distribution"; then
+  cat >&2 <<'CERT'
+
+error: no Apple Distribution certificate in the keychain.
+
+TestFlight builds are signed with a DISTRIBUTION certificate, which is a
+different certificate from the Apple Development one used for your own phone.
+Only an Account Holder or Admin can create it, so it cannot be scripted.
+
+  Xcode -> Settings -> Accounts -> select the team -> Manage Certificates
+  -> + -> Apple Distribution
+
+That creates it and installs it into the keychain in one step. Then re-run
+this with --distribution.
+
+CERT
+  exit 6
+fi
 
 WWTB_BUNDLE_ID=$(sed -n 's/.*<ApplicationId[^>]*>\([^<]*\)<.*/\1/p' Directory.Build.props | head -1)
 export WWTB_BUNDLE_ID
 export WWTB_TEAM="$DEVELOPMENT_TEAM"
 
-echo "==> Provisioning $WWTB_BUNDLE_ID and $WWTB_BUNDLE_ID.BusWidget"
+if [ "$DISTRIBUTION" = "1" ]; then
+  echo "==> Provisioning $WWTB_BUNDLE_ID and $WWTB_BUNDLE_ID.BusWidget (App Store)"
+else
+  echo "==> Provisioning $WWTB_BUNDLE_ID and $WWTB_BUNDLE_ID.BusWidget"
+fi
 xcodegen generate --spec ios/project.yml --project ios >/dev/null
 
 # Target the connected device, not "generic/platform=iOS".
@@ -33,7 +68,8 @@ xcodegen generate --spec ios/project.yml --project ios >/dev/null
 # covering only devices already on file -- and the install then fails with
 # "This provisioning profile cannot be installed on this device", which does not
 # mention registration at all.
-DEVICE_UDID=$(xcrun devicectl list devices --json-output /tmp/wwtb-devices.json >/dev/null 2>&1 && python3 -c "
+DEVICE_UDID=""
+[ "$DISTRIBUTION" = "1" ] || DEVICE_UDID=$(xcrun devicectl list devices --json-output /tmp/wwtb-devices.json >/dev/null 2>&1 && python3 -c "
 import json
 try:
     d = json.load(open('/tmp/wwtb-devices.json'))
@@ -47,12 +83,26 @@ for x in d.get('result', {}).get('devices', []):
         break
 " 2>/dev/null || true)
 
-if [ -n "$DEVICE_UDID" ]; then
+if [ "$DISTRIBUTION" = "1" ]; then
+  # An App Store profile is not tied to devices at all, so there is nothing to
+  # register and no reason to want a phone plugged in.
+  DESTINATION=(-destination "generic/platform=iOS")
+elif [ -n "$DEVICE_UDID" ]; then
   echo "    registering device $DEVICE_UDID"
   DESTINATION=(-destination "platform=iOS,id=$DEVICE_UDID")
 else
   echo "    no device connected -- profiles will cover only devices already registered"
   DESTINATION=(-destination "generic/platform=iOS")
+fi
+
+# ARCHIVE, not BUILD. Automatic signing chooses the profile from the ACTION:
+# building for a device asks for a development profile even with a distribution
+# certificate sitting right there, so a plain build can never mint what
+# TestFlight needs.
+if [ "$DISTRIBUTION" = "1" ]; then
+  ACTION=(archive -archivePath ios/build/prov/ProvisioningHost.xcarchive)
+else
+  ACTION=(build)
 fi
 
 # The widget target defaults to unsigned, which is right for the simulator and
@@ -70,7 +120,7 @@ xcodebuild \
   CODE_SIGNING_ALLOWED=YES \
   CODE_SIGNING_REQUIRED=YES \
   -allowProvisioningUpdates \
-  build > "$ROOT/ios/build/provision.log" 2>&1 || {
+  "${ACTION[@]}" > "$ROOT/ios/build/provision.log" 2>&1 || {
     # The commonest failure by far, and the message does not say what to do.
     # -allowProvisioningUpdates creates App IDs and mints profiles, but it will
     # NOT register a device it has never seen: that is a portal action.
@@ -184,4 +234,9 @@ WARN
 fi
 
 echo
-echo "Profiles are in place. Next: DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM scripts/build-device.sh --install"
+if [ "$DISTRIBUTION" = "1" ]; then
+  echo "App Store profiles are in place."
+  echo "Next: DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM scripts/build-testflight.sh"
+else
+  echo "Profiles are in place. Next: DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM scripts/build-device.sh --install"
+fi
