@@ -13,6 +13,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Used only to check whether your rider left school on the bus when their badge scan is missed. Location stays on this device.</string>
 	<key>NSSupportsLiveActivities</key>
