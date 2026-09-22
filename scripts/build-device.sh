@@ -32,7 +32,13 @@ APNS_ENV="${APNS_ENVIRONMENT:-development}"
 
 echo "==> Bundle id      $BUNDLE_ID"
 echo "==> Team           $DEVELOPMENT_TEAM"
-echo "==> APNs           $APNS_ENV  (worker needs APNS_SANDBOX=$([ "$APNS_ENV" = development ] && echo true || echo false))"
+# No instruction to change APNS_SANDBOX. This build tells the worker which
+# environment its tokens belong to when it registers, and the worker picks the
+# APNs host per activity -- so a development phone and a TestFlight household
+# are served at once and neither setting breaks the other. Telling someone to
+# flip a global switch for a device build would break the family's cards to fix
+# nothing.
+echo "==> APNs           $APNS_ENV  (declared per registration; the worker needs no change)"
 
 echo "==> 1/4 ActivityKit bridge"
 ./scripts/build-ios-native.sh > /dev/null
