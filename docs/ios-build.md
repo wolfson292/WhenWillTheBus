@@ -163,3 +163,49 @@ An empty list there means the icons are not in the build.
 They are white-on-transparent, so opening one against a white background shows a
 blank square and proves nothing. Judge them in the simulator, or against a dark
 background.
+
+### The three app-icon appearances
+
+iOS 18 asks for light, dark and tinted. `MauiIcon` rasterises one SVG into one
+appearance and offers no property for the others, so the appiconset is owned by
+hand instead:
+
+```
+src/WhenWillTheBus.App/Platforms/iOS/AppIcons.xcassets/AppIcon.appiconset/
+```
+
+`Resources/AppIcon/appicon.svg` remains the readable source of the geometry, and
+`scripts/build-app-icons.swift` draws all three 1024px PNGs from the same
+numbers. The PNGs are committed, so an ordinary build needs neither Swift nor the
+script — re-run it only after changing the artwork.
+
+```bash
+swift scripts/build-app-icons.swift
+```
+
+Two things have to agree or the app ships with **no icon at all**, which App
+Store Connect rejects after the upload:
+
+- `XSAppIconAssets` in `Platforms/iOS/Info.plist` names
+  `AppIcons.xcassets/AppIcon.appiconset`.
+- The catalog is picked up by the SDK's own `ImageAsset` glob. Do NOT add an
+  explicit `<ImageAsset Include=...>` for it: the glob strips the
+  `Platforms/iOS` prefix from the logical name, an explicit include does not,
+  and the two names collide into an `MT7158` per file.
+
+Confirm what actually compiled:
+
+```bash
+xcrun --sdk iphonesimulator assetutil --info \
+  src/WhenWillTheBus.App/bin/Debug/net10.0-ios/iossimulator-arm64/WhenWillTheBus.App.app/Assets.car
+```
+
+`UIAppearanceAny`, `UIAppearanceDark` and `ISAppearanceTintable` should all
+appear under `"Name" : "AppIcon"`.
+
+**Turning on system dark mode does not switch the icon.** The home screen keeps
+its own icon appearance, and it defaults to *Default* rather than *Auto* — so
+`simctl ui booted appearance dark` changes the wallpaper and every system icon
+while leaving yours alone, which looks exactly like a dark variant that did not
+build. Long-press the home screen, then Edit, Customize, and pick Dark or Tinted
+to actually exercise them.

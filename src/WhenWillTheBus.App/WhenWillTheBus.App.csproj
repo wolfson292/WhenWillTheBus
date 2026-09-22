@@ -62,7 +62,23 @@
   </ItemGroup>
 
   <ItemGroup>
-    <MauiIcon Include="Resources\AppIcon\appicon.svg" />
+    <!-- NO MauiIcon. It rasterises one SVG into one appearance and offers no way
+         to add the other two, so an app built through it shows the same bright
+         yellow tile on a dark home screen at night and ignores a tint its owner
+         chose. The appiconset below is owned by hand for that reason;
+         Resources/AppIcon/appicon.svg stays as the readable source of the
+         geometry, and scripts/build-app-icons.swift draws all three from it.
+
+         The catalog needs no item here: unlike MauiImage, ImageAsset IS globbed
+         by default, and the default strips the Platforms/iOS prefix from the
+         logical name — which is the name XSAppIconAssets in
+         Platforms/iOS/Info.plist has to match. Adding an explicit include gives
+         the same file a second, longer logical name and earns an MT7158 for
+         every file in the set.
+
+         Those two must agree: point XSAppIconAssets at a set that is not in the
+         build and the app ships with no icon at all, which App Store Connect
+         rejects after the upload. -->
 
     <!-- Color must match the ground baked into appicon.svg (#0E1117), because
          the splash mark is drawn without one and cuts straight through to this.
