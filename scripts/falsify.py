@@ -237,6 +237,50 @@ MUTATIONS = [
         test="Backstop_EventuallyRefreshesAQuietCard",
         why="a card can sit stale indefinitely with nothing to refresh it",
     ),
+    Mutation(
+        name="a ride is shown without a learned end",
+        path=CORE / "Prediction" / "JourneyStageMachine.cs",
+        find="            if (!finished && now < ends)",
+        replace="            if (!finished && now < ends && target is not null)",
+        test="RidingToSchool_IsShownEvenWithNothingLearnedAboutWhenItEnds",
+        why="the morning ride is invisible until a drop-off has already ended one",
+    ),
+    Mutation(
+        name="an aboard stage is bounded",
+        path=CORE / "Prediction" / "JourneyStageMachine.cs",
+        find="            if (!finished && now < ends)",
+        replace="            if (!finished)",
+        test="ARideWithNothingLearnedIsStillBounded",
+        why="a missed drop-off scan leaves a bar filling until midnight",
+    ),
+    Mutation(
+        name="a target on another day is dropped, not disqualifying",
+        path=CORE / "Prediction" / "JourneyStageMachine.cs",
+        find="            if (target is not null && !clock.SameDay(target, now))",
+        replace="            if (false)",
+        test="ATargetOnAnotherDayIsIgnoredRatherThanEndingTheJourney",
+        why="a bar fills towards a target on a different school day",
+    ),
+    Mutation(
+        name="the school arrival stays on today",
+        path=CORE / "Prediction" / "SchoolArrival.cs",
+        find="        DateTimeOffset moment = clock.AtLocal(clock.DateOf(now), new TimeOnly(middle / 60, middle % 60));",
+        replace=(
+            "        DateTimeOffset moment = clock.AtLocal(clock.DateOf(now), "
+            "new TimeOnly(middle / 60, middle % 60));\n"
+            "        if (moment <= now) { moment = moment.AddDays(1); }"
+        ),
+        test="ATimeAlreadyPastIsStillTodays",
+        why="a ride a minute behind schedule has its target moved off today",
+    ),
+    Mutation(
+        name="slack past a learned end of ride",
+        path=CORE / "Prediction" / "JourneyStageMachine.cs",
+        find="                ? target.Value + Tuning.RideOverrun",
+        replace="                ? target.Value",
+        test="ARideRunningLateStillCountsAsARide",
+        why="a bus running one minute late is read as a ride that already ended",
+    ),
 ]
 
 

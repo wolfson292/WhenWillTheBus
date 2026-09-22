@@ -83,12 +83,20 @@ public sealed record BusActivityState : ILiveActivityState
         ArrivalPrediction? prediction,
         double? distanceMiles,
         int? gpsAgeMinutes,
-        DateTimeOffset now) => new()
+        DateTimeOffset now)
+    {
+        // The band is the range the STOP arrival has been observed to fall in.
+        // While the rider is aboard, the card is counting towards the end of the
+        // ride instead, and a range drawn from a different journey reads as
+        // uncertainty about this one.
+        bool aboard = journey.Stage is JourneyStage.ToSchool or JourneyStage.FromSchool;
+
+        return new BusActivityState
         {
             Stage = journey.Stage,
             Target = journey.Target,
-            Earliest = prediction?.Earliest,
-            Latest = prediction?.Latest,
+            Earliest = aboard ? null : prediction?.Earliest,
+            Latest = aboard ? null : prediction?.Latest,
             Progress = journey.Progress,
             DistanceMiles = distanceMiles,
             Basis = prediction?.Basis,
@@ -97,6 +105,7 @@ public sealed record BusActivityState : ILiveActivityState
             // from an instant by itself and redraws only when a new fix lands.
             FixedAt = gpsAgeMinutes is int age ? now.AddMinutes(-age) : now,
         };
+    }
 
     public void Write(Utf8JsonWriter writer)
     {

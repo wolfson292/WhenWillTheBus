@@ -116,14 +116,39 @@ public sealed class BusPage : ContentPage
         ShowEstimate(true);
         _stage.Text = StageTitle(journey.Stage, _bus.Rider?.Name);
 
-        DateTime local = prediction.Arrival.ToLocalTime().DateTime;
-        _arrival.Text = local.ToString("h:mm");
-        _countdown.Text = Countdown(prediction.Arrival);
+        // WHILE THE RIDER IS ABOARD, THE TIME THAT MATTERS IS WHERE THE RIDE
+        // ENDS. The prediction is about the next arrival at the HOME STOP, and
+        // it rolls on to the following run the moment a rider is collected --
+        // so on 22 Sep this page answered the morning ride to school with a
+        // countdown to the afternoon pickup, nine hours out.
+        bool aboard = journey.Stage is JourneyStage.ToSchool or JourneyStage.FromSchool;
+        DateTimeOffset? headline = aboard ? journey.Target : prediction.Arrival;
+
+        _arrival.IsVisible = headline is not null;
+        if (headline is { } moment)
+        {
+            _arrival.Text = moment.ToLocalTime().ToString("h:mm");
+            _countdown.Text = Countdown(moment);
+            _countdown.IsVisible = true;
+        }
+        else if (aboard && journey.Boarded is { } boarded)
+        {
+            // Nothing has been learned about where this ride ends yet, so say
+            // the one thing that IS known rather than borrowing a number from a
+            // different journey.
+            _countdown.Text = $"aboard since {boarded.ToLocalTime():h:mm tt}";
+            _countdown.IsVisible = true;
+        }
+        else
+        {
+            _countdown.IsVisible = false;
+        }
 
         // The observed range, not a statistical interval. It closes towards
         // nothing as the bus nears the stop, because what is left to vary is the
-        // part of the journey still to run.
-        bool haveBand = prediction.Earliest is not null && prediction.Latest is not null;
+        // part of the journey still to run. It describes the arrival at the
+        // STOP, so it says nothing about a ride in progress.
+        bool haveBand = !aboard && prediction.Earliest is not null && prediction.Latest is not null;
         _band.Text = haveBand
             ? $"between {prediction.Earliest!.Value.ToLocalTime():h:mm} and {prediction.Latest!.Value.ToLocalTime():h:mm}"
             : string.Empty;

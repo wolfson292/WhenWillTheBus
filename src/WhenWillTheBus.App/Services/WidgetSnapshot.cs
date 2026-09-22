@@ -82,7 +82,13 @@ public static partial class WidgetSnapshot
 
             // Whole-second epoch: Swift's .iso8601 decoder rejects the
             // fractional seconds .NET writes by default.
-            DateTimeOffset? target = journey.Target ?? prediction?.Arrival;
+            //
+            // The prediction is only a FALLBACK for when no journey is running.
+            // Once the rider is aboard it describes the next run, not this one,
+            // and borrowing it puts the afternoon pickup under "riding to
+            // school" on the home screen.
+            bool aboard = journey.Stage is JourneyStage.ToSchool or JourneyStage.FromSchool;
+            DateTimeOffset? target = journey.Target ?? (aboard ? null : prediction?.Arrival);
             if (target is not null)
             {
                 writer.WriteNumber("target", target.Value.ToUnixTimeSeconds());

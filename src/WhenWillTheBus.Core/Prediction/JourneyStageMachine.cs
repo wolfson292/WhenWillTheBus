@@ -126,6 +126,15 @@ public static class JourneyStageMachine
 
         // 3. Aboard. The bar fills against ELAPSED TIME, because distance to the
         //    home stop says nothing useful while the bus is working its route.
+        //
+        //    BOARDING IS THE FACT; THE TARGET IS A REFINEMENT. This used to
+        //    require a target and return nothing without one, which made the
+        //    morning stage depend on a school-arrival time learned from
+        //    DROP-OFF SCANS -- the very event that ENDS the ride. On a history
+        //    with no morning drop-off in it yet there was nothing to learn
+        //    from, so on 22 Sep the rider boarded at 08:01 and the app fell
+        //    straight through to idle and showed a countdown to the AFTERNOON
+        //    pickup, for the whole ride to school.
         if (input.LastPickup is not null && clock.SameDay(input.LastPickup, now))
         {
             DateTimeOffset boarded = input.LastPickup.Value;
@@ -134,18 +143,34 @@ public static class JourneyStageMachine
                 && clock.SameDay(input.LastDropoff, now)
                 && input.LastDropoff.Value > boarded;
 
-            DateTimeOffset? target = morning ? input.SchoolArrival : input.NextArrival;
-
-            // The target has to be TODAY. Once the journey ends the predictions
+            // The target has to be TODAY. Once a journey ends the predictions
             // roll to the next school day, and a bar filling towards a target
-            // three days out is never right.
-            if (!finished && target is not null && clock.SameDay(target, now))
+            // three days out is never right. A target that is not today is
+            // dropped rather than disqualifying the stage — being aboard does
+            // not stop being true because we cannot say when it ends.
+            DateTimeOffset? target = morning ? input.SchoolArrival : input.NextArrival;
+            if (target is not null && !clock.SameDay(target, now))
+            {
+                target = null;
+            }
+
+            // Bounded either way, because the scan that ends the ride is the
+            // school's and can be late or never come at all. Unbounded, this
+            // held a filling bar until midnight.
+            DateTimeOffset ends = target is not null
+                ? target.Value + Tuning.RideOverrun
+                : boarded + Tuning.UnlearnedRide;
+
+            if (!finished && now < ends)
             {
                 return new Journey
                 {
                     Stage = morning ? JourneyStage.ToSchool : JourneyStage.FromSchool,
-                    Progress = Fraction(boarded, target.Value, now),
-                    Target = ToTheMinute(target.Value),
+
+                    // Null, not zero: a bar drawn at 0% for a whole ride claims
+                    // to know the journey has not started.
+                    Progress = target is null ? null : Fraction(boarded, target.Value, now),
+                    Target = target is null ? null : ToTheMinute(target.Value),
                     Boarded = boarded,
                     JourneyId = clock.JourneyId(boarded),
                 };

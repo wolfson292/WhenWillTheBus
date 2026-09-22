@@ -229,8 +229,8 @@ public sealed class BusService : INotifyPropertyChanged
 
         ArrivalPrediction? prediction = _engine.PredictNextArrival(rider, now);
 
-        // The morning stage needs a target or it cannot fire at all -- see the
-        // same call in the worker.
+        // What the morning bar fills towards, null until a drop-off has been
+        // recorded -- see the same call in the worker.
         SchoolArrival? school = SchoolArrivalPredictor.Predict(rider, now, _clock);
         Journey journey = _engine.Stage(rider, now, prediction, school?.Arrival);
 

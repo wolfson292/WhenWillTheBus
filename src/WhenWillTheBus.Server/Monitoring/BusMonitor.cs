@@ -161,9 +161,10 @@ public sealed class BusMonitor(
 
             ArrivalPrediction? prediction = engine.PredictNextArrival(student, now);
 
-            // The morning stage needs a target or it cannot fire at all: §5's
-            // rule 3 requires one, so without this the bar never fills between
-            // boarding and the classroom.
+            // What the morning bar fills TOWARDS. §5's rule 3 shows the ride
+            // with or without it, so a null here costs the countdown, not the
+            // stage -- which is the whole point, because this is learned from
+            // the drop-off scans that end the very ride it describes.
             SchoolArrival? school = SchoolArrivalPredictor.Predict(student, now, clock);
             Journey journey = engine.Stage(student, now, prediction, school?.Arrival);
 

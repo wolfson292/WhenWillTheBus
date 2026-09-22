@@ -139,6 +139,28 @@ public static class Tuning
     public static readonly TimeSpan ArrivedDwell = TimeSpan.FromMinutes(3);
 
     /// <summary>
+    /// How far past a learned end-of-ride the "aboard" stage may still run.
+    /// </summary>
+    /// <remarks>
+    /// The scan that ends a ride is the school's, not ours, and it arrives when
+    /// it arrives -- so a ride running late must not be read as a ride that
+    /// ended. It cannot be unbounded either: an early fault left a morning
+    /// progress bar filling for two hours after the rider was in class.
+    /// </remarks>
+    public static readonly TimeSpan RideOverrun = TimeSpan.FromMinutes(45);
+
+    /// <summary>
+    /// How long an aboard stage may run when NOTHING has been learned about the
+    /// ride yet, and there is therefore no target to overrun.
+    /// </summary>
+    /// <remarks>
+    /// Generous, because it is bounding the one case with no evidence at all:
+    /// the observed morning ride here is 83 minutes, and a cap that cut it off
+    /// mid-journey would be the very fault this is here to prevent.
+    /// </remarks>
+    public static readonly TimeSpan UnlearnedRide = TimeSpan.FromHours(2);
+
+    /// <summary>
     /// The API reports fix age in whole minutes, so a fix instant computed
     /// straight from the clock wobbles across minute boundaries. A new instant
     /// must beat the standing one by more than this to replace it.

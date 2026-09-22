@@ -116,9 +116,16 @@ public static class PushPolicy
             JourneyStage.AtStop => ("Bus is here", $"The bus has reached {riderName}'s stop."),
             JourneyStage.ToSchool when journey.Target is not null =>
                 ("On the bus", $"{riderName} is aboard, at school around {Time(journey.Target.Value, clock)}."),
+
+            // Boarding is worth saying even when nothing has been learned about
+            // when the ride ends. Staying silent until a school-arrival time
+            // exists withholds the most useful notification of the morning on
+            // exactly the days it has never been sent before.
+            JourneyStage.ToSchool => ("On the bus", $"{riderName} is aboard the bus to school."),
             JourneyStage.AtSchool => ("At school", $"{riderName} was dropped off safely."),
             JourneyStage.FromSchool when journey.Target is not null =>
                 ("Heading home", $"{riderName} is aboard, home around {Time(journey.Target.Value, clock)}."),
+            JourneyStage.FromSchool => ("Heading home", $"{riderName} is aboard the bus home."),
             JourneyStage.Home => ("Home", $"{riderName} is off the bus."),
             _ => null,
         };

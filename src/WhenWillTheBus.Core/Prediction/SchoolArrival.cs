@@ -20,9 +20,11 @@ public sealed record SchoolArrival(DateTimeOffset Arrival, int Samples, int? Rid
 /// in the scan history — the same median with the same outlier rejection used
 /// for stop arrivals, so one morning stuck in traffic does not drag the estimate.
 ///
-/// Without this the morning stage has no target, and §5's rule 3 requires one:
-/// the bar would never fill between boarding and the classroom, which is most of
-/// what a parent wants to see once the rider is aboard.
+/// Without this the morning stage has no target to fill towards between boarding
+/// and the classroom, which is most of what a parent wants to see once the rider
+/// is aboard. It is a REFINEMENT, not a precondition: §5's rule 3 shows the ride
+/// with or without one, because a history that has never recorded a morning
+/// drop-off is exactly a history that cannot produce this.
 /// </remarks>
 public static class SchoolArrivalPredictor
 {
@@ -68,14 +70,17 @@ public static class SchoolArrivalPredictor
         (IReadOnlyList<int> kept, _) = Statistics.RejectOutliers(arrivals);
         int middle = Statistics.Median(kept);
 
+        // TODAY'S date, always -- this is the time the morning ride typically
+        // ENDS, not a forecast of the next one.
+        //
+        // It used to roll to tomorrow once the time had passed, so that a
+        // progress bar could not fill instantly and stay full. That cure was
+        // worse: the only consumer is the aboard stage, which requires a target
+        // dated today, so a ride running even a minute past the usual arrival
+        // had its target moved out of reach and the stage collapsed to idle
+        // mid-journey. Pinning a bar at 100% while a late bus finishes its run
+        // is the honest reading; vanishing is not.
         DateTimeOffset moment = clock.AtLocal(clock.DateOf(now), new TimeOnly(middle / 60, middle % 60));
-
-        // A time already gone is tomorrow's. The target has to be ahead of now,
-        // or a progress bar fills instantly and stays full.
-        if (moment <= now)
-        {
-            moment = clock.AtLocal(clock.DateOf(now).AddDays(1), new TimeOnly(middle / 60, middle % 60));
-        }
 
         int? ride = null;
         if (rides.Count > 0)

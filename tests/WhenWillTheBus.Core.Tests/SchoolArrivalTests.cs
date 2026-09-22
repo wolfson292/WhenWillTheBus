@@ -58,11 +58,13 @@ public sealed class SchoolArrivalTests
     }
 
     /// <summary>
-    /// A target already gone is tomorrow's. Left in the past, a progress bar
-    /// fills instantly and stays full for the rest of the day.
+    /// A time already past stays on TODAY. This used to roll forward a day so a
+    /// progress bar could not sit full, which moved the target off the only day
+    /// the aboard stage will accept — so a ride running a minute late lost its
+    /// stage entirely and the app fell back to the afternoon pickup.
     /// </summary>
     [Fact]
-    public void ATimeAlreadyPastBelongsToTomorrow()
+    public void ATimeAlreadyPastIsStillTodays()
     {
         Student student = WithScans(
             Scan(2026, 9, 15, 8, 20, ScanKind.Dropoff),
@@ -72,7 +74,7 @@ public sealed class SchoolArrivalTests
             student, EngineFixtures.LocalAt(2026, 9, 17, 10, 0), EngineFixtures.Clock);
 
         Assert.NotNull(school);
-        Assert.Equal(new DateOnly(2026, 9, 18), EngineFixtures.Clock.DateOf(school.Arrival));
+        Assert.Equal(new DateOnly(2026, 9, 17), EngineFixtures.Clock.DateOf(school.Arrival));
     }
 
     /// <summary>Afternoon scans say nothing about when the morning ride ends.</summary>
