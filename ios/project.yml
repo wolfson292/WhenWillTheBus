@@ -47,6 +47,14 @@ targets:
       properties:
         CFBundleDisplayName: Bus
         CFBundleName: BusWidget
+
+        # MUST MATCH THE HOST APP'S. App Store Connect warns on a mismatch and
+        # the extension is the half nobody thinks to version -- it sat at "1"
+        # against an app stamped with a timestamp. Supplied by
+        # scripts/build-widget.sh so there is one source of truth.
+        CFBundleShortVersionString: ${WWTB_VERSION}
+        CFBundleVersion: ${WWTB_BUILD}
+
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 

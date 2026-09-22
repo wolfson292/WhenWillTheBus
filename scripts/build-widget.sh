@@ -28,6 +28,12 @@ WWTB_BUNDLE_ID=$(sed -n 's/.*<ApplicationId[^>]*>\([^<]*\)<.*/\1/p' "$ROOT/Direc
 [ -n "$WWTB_BUNDLE_ID" ] || { echo "error: no ApplicationId in Directory.Build.props" >&2; exit 1; }
 export WWTB_BUNDLE_ID
 
+# The extension carries its own version, and it must match the host app's or
+# App Store Connect warns about the mismatch on every upload. Defaults suit a
+# local build; scripts/build-testflight.sh passes the real build number.
+export WWTB_VERSION="${WWTB_VERSION:-1.0}"
+export WWTB_BUILD="${WWTB_BUILD:-1}"
+
 if [ "$DESTINATION" = "device" ]; then
   SDK="iphoneos"
   RID="ios-arm64"

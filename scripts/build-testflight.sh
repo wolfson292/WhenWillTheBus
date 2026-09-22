@@ -15,15 +15,28 @@
 # Usage:
 #   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh
 #
-# Then upload the .ipa, either with Transporter.app or:
-#   xcrun altool --upload-app -f <ipa> -t ios \
-#     --apiKey <KEY_ID> --apiIssuer <ISSUER_ID>
+# Pass --upload to send it to App Store Connect when it passes verification.
+#
+# Usage:
+#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh [--upload]
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+UPLOAD=0
+[ "${1:-}" = "--upload" ] && UPLOAD=1
+
 [ -n "${DEVELOPMENT_TEAM:-}" ] || { echo "error: DEVELOPMENT_TEAM is not set. Run scripts/team-id.sh." >&2; exit 1; }
+
+# NEITHER OF THESE IS A SECRET. They name which key to use; the key itself is
+# the .p8, which lives in keys/ (gitignored) and at
+# ~/.appstoreconnect/private_keys/AuthKey_<KEY_ID>.p8, where altool looks for it.
+# Committing the identifiers and not the key is the point: the pair is useless
+# without it, and hardcoding nothing means guessing them at 11pm in a term-time
+# panic when a build has expired.
+APPSTORE_KEY_ID="${APPSTORE_KEY_ID:-3CLNXCUTZD}"
+APPSTORE_ISSUER_ID="${APPSTORE_ISSUER_ID:-513a9d41-1a99-496f-bf7c-41e6712d15cb}"
 
 BUNDLE_ID=$(sed -n 's/.*<ApplicationId[^>]*>\([^<]*\)<.*/\1/p' Directory.Build.props | head -1)
 [ "$BUNDLE_ID" != "com.example.whenwillthebus" ] || {
@@ -62,7 +75,7 @@ dotnet build src/WhenWillTheBus.App \
 # inside an App Store build is rejected at upload with ITMS-90035 -- ten minutes
 # in, on an error that names neither the extension nor the certificate.
 echo "==> 3/4 Widget extension (distribution signing)"
-WWTB_DISTRIBUTION=1 ./scripts/build-widget.sh device Release
+WWTB_DISTRIBUTION=1 WWTB_BUILD="$BUILD_NUMBER" ./scripts/build-widget.sh device Release
 
 echo "==> 4/4 App archive"
 dotnet publish src/WhenWillTheBus.App \
@@ -123,6 +136,8 @@ else
   check "widget signed by"      "$(signer "$APPEX")"                          "Apple Distribution"
   check "widget get-task-allow" "$(ent "$APPEX" get-task-allow)"              "false"
   check "widget app group"      "$(ent "$APPEX" "$GROUPS_KEY")"               "group.$BUNDLE_ID"
+  check "widget build number"   "$(plutil -extract CFBundleVersion raw "$APPEX/Info.plist" 2>/dev/null)" \
+                                "$BUILD_NUMBER"
 fi
 
 [ "$FAILED" = "0" ] || { echo; echo "error: this package would be rejected. Not uploading it." >&2; exit 1; }
@@ -130,7 +145,28 @@ fi
 echo
 echo "Built: $IPA"
 echo
-echo "Upload it with Transporter.app, or:"
-echo "  xcrun altool --upload-app -f \"$IPA\" -t ios --apiKey <KEY_ID> --apiIssuer <ISSUER_ID>"
+
+if [ "$UPLOAD" = "0" ]; then
+  echo "Upload it with Transporter.app, or re-run with --upload, or:"
+  echo "  xcrun altool --upload-app -f \"$IPA\" -t ios \\"
+  echo "    --apiKey $APPSTORE_KEY_ID --apiIssuer $APPSTORE_ISSUER_ID"
+else
+  KEYFILE="$HOME/.appstoreconnect/private_keys/AuthKey_$APPSTORE_KEY_ID.p8"
+  [ -f "$KEYFILE" ] || {
+    echo "error: altool cannot find the App Store Connect key." >&2
+    echo "       Expected: $KEYFILE" >&2
+    echo "       Copy it there from keys/AuthKey_$APPSTORE_KEY_ID.p8" >&2
+    exit 1
+  }
+
+  echo "==> Uploading build $BUILD_NUMBER to App Store Connect"
+  xcrun altool --upload-app -f "$IPA" -t ios \
+    --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID"
+
+  echo
+  echo "Uploaded. App Store Connect processes it for a few minutes before it"
+  echo "appears in TestFlight; internal testers need no review."
+fi
+
 echo
 echo "The worker needs no change: this build tells it the token is production."
