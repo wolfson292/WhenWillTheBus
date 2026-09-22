@@ -31,8 +31,19 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
             return false;
         }
 
+        // Which APNs environment this build's push token belongs to. A
+        // sandbox token is rejected outright by production and vice versa,
+        // always as a silent non-delivery -- and one worker has to serve a
+        // TestFlight family alongside a development phone, so it must be told
+        // rather than left to guess.
+#if APNS_PRODUCTION
+        const string Environment = "production";
+#else
+        const string Environment = "sandbox";
+#endif
+
         string body = $$"""
-            {"journeyId":"{{journeyId}}","childId":{{childId}},"pushToken":"{{pushToken}}"}
+            {"journeyId":"{{journeyId}}","childId":{{childId}},"pushToken":"{{pushToken}}","environment":"{{Environment}}"}
             """;
 
         using HttpRequestMessage request = new(HttpMethod.Post, $"{server.Value.Url}/activities")

@@ -152,11 +152,16 @@ app.MapPost("/activities", async (
         return Results.BadRequest(new { error = "journeyId and pushToken are both required" });
     }
 
+    // Default to sandbox: a build that did not say is an older one, and those
+    // were all development builds.
+    bool sandbox = !string.Equals(registration.Environment, "production", StringComparison.OrdinalIgnoreCase);
+
     registry.Register(new RegisteredActivity(
         registration.JourneyId,
         registration.ChildId,
         registration.PushToken,
-        DateTimeOffset.UtcNow));
+        DateTimeOffset.UtcNow,
+        sandbox));
 
     await registry.SaveAsync(token);
     return Results.NoContent();
@@ -303,13 +308,14 @@ app.MapPost("/push/test", async (
     foreach (RegisteredActivity activity in activities)
     {
         PushResult result = ending
-            ? await apns.EndAsync(activity.PushToken, state, now, token)
+            ? await apns.EndAsync(activity.PushToken, state, now, activity.Sandbox, token)
             : await apns.UpdateAsync(
                 activity.PushToken,
                 state,
                 PushUrgency.TimeSensitive,
                 now.AddMinutes(10),
                 ("Test push", "If you can read this, the worker can reach your Lock Screen."),
+                activity.Sandbox,
                 token);
 
         // Forget the token when the activity is gone: because Apple said so, or
@@ -325,6 +331,7 @@ app.MapPost("/push/test", async (
         results.Add(new
         {
             activity.JourneyId,
+            environment = activity.Sandbox ? "sandbox" : "production",
             delivered = result.Delivered,
             appleStatus = (int)result.Status,
             appleReason = result.Reason,
@@ -435,4 +442,6 @@ app.Run();
 return 0;
 
 /// <summary>What a phone sends after starting a Live Activity.</summary>
-internal sealed record ActivityRegistration(string JourneyId, long ChildId, string PushToken);
+/// <param name="Environment">"sandbox" or "production"; sandbox when a build did not say.</param>
+internal sealed record ActivityRegistration(
+    string JourneyId, long ChildId, string PushToken, string? Environment);

@@ -43,7 +43,20 @@ public sealed class ApnsOptions
     /// </summary>
     public bool UseSandbox { get; set; }
 
-    public string Host => UseSandbox ? "api.sandbox.push.apple.com" : "api.push.apple.com";
+    /// <summary>The default when an activity did not say which it belongs to.</summary>
+    public string Host => HostFor(UseSandbox);
+
+    /// <summary>
+    /// The APNs host for one environment.
+    /// </summary>
+    /// <remarks>
+    /// Chosen PER ACTIVITY, not once for the worker. A development build and a
+    /// TestFlight build mint tokens in different environments, each rejected
+    /// outright by the other host, and a household will have both at once. The
+    /// signing token is the same for either, so only the host differs.
+    /// </remarks>
+    public static string HostFor(bool sandbox) =>
+        sandbox ? "api.sandbox.push.apple.com" : "api.push.apple.com";
 
     /// <summary>The topic a Live Activity push must carry.</summary>
     public string LiveActivityTopic => $"{BundleId}.push-type.liveactivity";

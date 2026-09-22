@@ -74,7 +74,7 @@ public sealed class LiveActivityPublisher(
                     // Dismiss now. The stage machine held the finished card for its
                     // dwell before reaching idle, so waiting again here just leaves a
                     // stale card on the Lock Screen.
-                    () => apns.EndAsync(activity.PushToken, state, now, cancellationToken),
+                    () => apns.EndAsync(activity.PushToken, state, now, activity.Sandbox, cancellationToken),
                     activity,
                     cancellationToken).ConfigureAwait(false);
 
@@ -101,7 +101,8 @@ public sealed class LiveActivityPublisher(
         foreach (RegisteredActivity activity in activities)
         {
             await SendAsync(
-                () => apns.UpdateAsync(activity.PushToken, state, urgency, staleAfter, alert, cancellationToken),
+                () => apns.UpdateAsync(
+                    activity.PushToken, state, urgency, staleAfter, alert, activity.Sandbox, cancellationToken),
                 activity,
                 cancellationToken).ConfigureAwait(false);
         }

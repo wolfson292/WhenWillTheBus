@@ -14,11 +14,17 @@ namespace WhenWillTheBus.Server.Devices;
 /// <c>Activity.pushTokenUpdates</c> after starting the activity locally, and it
 /// changes — the app must re-register whenever it does.
 /// </param>
+/// <param name="Sandbox">
+/// Which APNs environment this token belongs to. A development build mints
+/// sandbox tokens and a TestFlight build mints production ones; each is rejected
+/// outright by the other host, always silently, and a household runs both.
+/// </param>
 public sealed record RegisteredActivity(
     string JourneyId,
     long ChildId,
     string PushToken,
-    DateTimeOffset RegisteredAt);
+    DateTimeOffset RegisteredAt,
+    bool Sandbox);
 
 /// <summary>
 /// Remembers which Live Activities are running, so the worker knows where to
@@ -105,6 +111,10 @@ public sealed class DeviceRegistry(ILogger<DeviceRegistry> logger)
                     continue;
                 }
 
+                // Older entries predate the field; sandbox was the only thing
+                // that existed then.
+                bool sandbox = !item.TryGetProperty("sandbox", out JsonElement flag) || flag.GetBoolean();
+
                 _activities[pushToken] = new RegisteredActivity(
                     journeyId,
                     item.GetProperty("childId").GetInt64(),
@@ -112,7 +122,8 @@ public sealed class DeviceRegistry(ILogger<DeviceRegistry> logger)
                     DateTimeOffset.Parse(
                         item.GetProperty("registeredAt").GetString()!,
                         CultureInfo.InvariantCulture,
-                        DateTimeStyles.RoundtripKind));
+                        DateTimeStyles.RoundtripKind),
+                    sandbox);
             }
         }
         catch (Exception error) when (error is JsonException or FormatException or KeyNotFoundException)
@@ -139,6 +150,7 @@ public sealed class DeviceRegistry(ILogger<DeviceRegistry> logger)
                 writer.WriteNumber("childId", activity.ChildId);
                 writer.WriteString("pushToken", activity.PushToken);
                 writer.WriteString("registeredAt", activity.RegisteredAt.ToString("O", CultureInfo.InvariantCulture));
+                writer.WriteBoolean("sandbox", activity.Sandbox);
                 writer.WriteEndObject();
             }
 

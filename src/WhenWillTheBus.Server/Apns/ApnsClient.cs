@@ -69,8 +69,9 @@ public sealed class ApnsClient(
         PushUrgency urgency,
         DateTimeOffset? staleAfter = null,
         (string Title, string Body)? alert = null,
+        bool? sandbox = null,
         CancellationToken cancellationToken = default) =>
-        SendAsync(deviceToken, "update", contentState, urgency, staleAfter, alert, null, cancellationToken);
+        SendAsync(deviceToken, "update", contentState, urgency, staleAfter, alert, null, sandbox, cancellationToken);
 
     /// <summary>End a Live Activity.</summary>
     /// <param name="dismissAt">
@@ -91,9 +92,11 @@ public sealed class ApnsClient(
         string deviceToken,
         ILiveActivityState contentState,
         DateTimeOffset? dismissAt = null,
+        bool? sandbox = null,
         CancellationToken cancellationToken = default) =>
         SendAsync(
-            deviceToken, "end", contentState, PushUrgency.TimeSensitive, null, null, dismissAt, cancellationToken);
+            deviceToken, "end", contentState, PushUrgency.TimeSensitive, null, null, dismissAt, sandbox,
+            cancellationToken);
 
     private async Task<PushResult> SendAsync(
         string deviceToken,
@@ -103,13 +106,15 @@ public sealed class ApnsClient(
         DateTimeOffset? staleAfter,
         (string Title, string Body)? alert,
         DateTimeOffset? dismissAt,
+        bool? sandbox,
         CancellationToken cancellationToken)
     {
         string payload = BuildPayload(eventName, contentState, staleAfter, alert, dismissAt);
+        string host = sandbox is null ? _options.Host : ApnsOptions.HostFor(sandbox.Value);
 
         using HttpRequestMessage request = new(
             HttpMethod.Post,
-            $"https://{_options.Host}/3/device/{deviceToken}")
+            $"https://{host}/3/device/{deviceToken}")
         {
             Version = HttpVersion.Version20,
             VersionPolicy = HttpVersionPolicy.RequestVersionExact,
@@ -138,7 +143,8 @@ public sealed class ApnsClient(
             string? reason = ReadReason(body);
 
             logger.LogWarning(
-                "APNs rejected a {Event} push: {Status} {Reason}", eventName, (int)response.StatusCode, reason);
+                "APNs ({Host}) rejected a {Event} push: {Status} {Reason}",
+                host, eventName, (int)response.StatusCode, reason);
 
             return new PushResult(false, response.StatusCode, reason);
         }
