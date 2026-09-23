@@ -25,7 +25,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 UPLOAD=0
-[ "${1:-}" = "--upload" ] && UPLOAD=1
+ONLY_UPLOAD=0
+case "${1:-}" in
+  --upload) UPLOAD=1 ;;
+  # Uploading is the cheap half and the half that fails. Rebuilding forty
+  # minutes of AOT to retry a ninety-second transfer is the wrong shape.
+  --upload-only) UPLOAD=1; ONLY_UPLOAD=1 ;;
+esac
 
 [ -n "${DEVELOPMENT_TEAM:-}" ] || { echo "error: DEVELOPMENT_TEAM is not set. Run scripts/team-id.sh." >&2; exit 1; }
 
@@ -37,6 +43,52 @@ UPLOAD=0
 # panic when a build has expired.
 APPSTORE_KEY_ID="${APPSTORE_KEY_ID:-3CLNXCUTZD}"
 APPSTORE_ISSUER_ID="${APPSTORE_ISSUER_ID:-513a9d41-1a99-496f-bf7c-41e6712d15cb}"
+
+# altool EXITS 0 ON A FAILED UPLOAD. On 23 Sep it printed
+#
+#   Error: The file doesn't exist. 'Defaults.properties' couldn't be opened
+#
+# and returned success, so the script reported a build that had reached
+# App Store Connect when nothing had. The only trustworthy signal is the
+# words it prints, so that is what is checked.
+#
+# That particular failure is its bundled transporter re-downloading itself and
+# is transient, which is why one retry is worth more here than an error would
+# be -- the second attempt succeeded immediately.
+upload() {
+  local ipa="$1" attempt output
+
+  local keyfile="$HOME/.appstoreconnect/private_keys/AuthKey_$APPSTORE_KEY_ID.p8"
+  [ -f "$keyfile" ] || {
+    echo "error: altool cannot find the App Store Connect key." >&2
+    echo "       Expected: $keyfile" >&2
+    echo "       Copy it there from keys/AuthKey_$APPSTORE_KEY_ID.p8" >&2
+    exit 1
+  }
+
+  for attempt in 1 2; do
+    echo "==> Uploading $(basename "$ipa") to App Store Connect (attempt $attempt)"
+    output=$(xcrun altool --upload-app -f "$ipa" -t ios \
+      --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID" 2>&1 || true)
+
+    if grep -q "UPLOAD SUCCEEDED" <<<"$output"; then
+      grep -E "Delivery UUID|Transferred" <<<"$output" | sed 's/^/    /'
+      echo
+      echo "Uploaded. App Store Connect processes it for a few minutes before it"
+      echo "appears in TestFlight; internal testers need no review."
+      return 0
+    fi
+
+    echo "    upload did not report success:" >&2
+    grep -iE "error|warning" <<<"$output" | head -5 | sed 's/^/    /' >&2
+    [ "$attempt" = "1" ] && echo "    retrying once..." >&2
+  done
+
+  echo >&2
+  echo "error: the upload failed. The .ipa is fine -- retry just the transfer with:" >&2
+  echo "       DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM scripts/build-testflight.sh --upload-only" >&2
+  exit 1
+}
 
 BUNDLE_ID=$(sed -n 's/.*<ApplicationId[^>]*>\([^<]*\)<.*/\1/p' Directory.Build.props | head -1)
 [ "$BUNDLE_ID" != "com.example.whenwillthebus" ] || {
@@ -51,6 +103,13 @@ echo "==> Bundle id     $BUNDLE_ID"
 echo "==> Team          $DEVELOPMENT_TEAM"
 echo "==> Build number  $BUILD_NUMBER"
 echo "==> APNs          production"
+
+if [ "$ONLY_UPLOAD" = "1" ]; then
+  IPA=$(find src/WhenWillTheBus.App/bin/Release/net10.0-ios -name "*.ipa" | head -1)
+  [ -n "$IPA" ] || { echo "error: no .ipa to upload. Build one first." >&2; exit 1; }
+  upload "$IPA"
+  exit 0
+fi
 
 echo "==> 1/4 ActivityKit bridge"
 ./scripts/build-ios-native.sh > /dev/null
@@ -188,13 +247,7 @@ else
     exit 1
   }
 
-  echo "==> Uploading build $BUILD_NUMBER to App Store Connect"
-  xcrun altool --upload-app -f "$IPA" -t ios \
-    --apiKey "$APPSTORE_KEY_ID" --apiIssuer "$APPSTORE_ISSUER_ID"
-
-  echo
-  echo "Uploaded. App Store Connect processes it for a few minutes before it"
-  echo "appears in TestFlight; internal testers need no review."
+  upload "$IPA"
 fi
 
 echo
