@@ -8,17 +8,22 @@
 # Portainer then manages the running stack in the ordinary way: environment
 # variables, logs, restart, redeploy.
 #
-# Re-run this whenever the server code changes, then hit Redeploy in Portainer
-# (or pass --restart to do it from here).
+# Re-run this whenever the server code changes. --redeploy then does the
+# Portainer half too, and verifies the running container is actually on the
+# image that was just built -- which is the step everything else hinges on and
+# the one that is silent when it does not happen.
 #
 # Usage:
-#   scripts/deploy-server.sh [--restart]
+#   scripts/deploy-server.sh [--redeploy]
 #
 # Override the target with WWTB_HOST / WWTB_USER / WWTB_ROOT.
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
+
+REDEPLOY=0
+[ "${1:-}" = "--redeploy" ] && REDEPLOY=1
 
 HOST="${WWTB_HOST:-192.168.3.151}"
 USER="${WWTB_USER:-scottwolf}"
@@ -56,7 +61,42 @@ echo "==> Building $TAG on $HOST"
 echo
 echo "Image is on $HOST."
 echo
-echo "NOW REDEPLOY THE STACK IN PORTAINER -- a plain restart is not enough."
-echo "\"docker restart\" reuses the running container, and a container is bound to"
-echo "the image it was CREATED from, so it keeps serving the old build while"
-echo "reporting healthy. Portainer's Redeploy recreates it."
+
+if [ "$REDEPLOY" = "0" ]; then
+  echo "NOW REDEPLOY THE STACK IN PORTAINER -- a plain restart is not enough."
+  echo "\"docker restart\" reuses the running container, and a container is bound to"
+  echo "the image it was CREATED from, so it keeps serving the old build while"
+  echo "reporting healthy. Portainer's Redeploy recreates it."
+  echo
+  echo "Or re-run this with --redeploy to do it from here."
+  exit 0
+fi
+
+"$ROOT/scripts/portainer-redeploy.sh"
+
+# VERIFIED, not assumed. Everything about this step fails quietly: a redeploy
+# that did not happen leaves a container running the old image and reporting
+# healthy, which is indistinguishable from success until a bug you already
+# fixed turns up again on a phone.
+echo "==> Waiting for the container to come back on the new image"
+WANT=$("${SSH[@]}" "sudo docker image inspect $TAG --format '{{.Id}}'")
+
+for attempt in $(seq 1 30); do
+  GOT=$("${SSH[@]}" "sudo docker inspect whenwillthebus --format '{{.Image}}'" 2>/dev/null || echo "")
+  HEALTH=$("${SSH[@]}" "sudo docker inspect whenwillthebus --format '{{.State.Health.Status}}'" 2>/dev/null || echo "")
+
+  if [ "$GOT" = "$WANT" ] && [ "$HEALTH" = "healthy" ]; then
+    echo "    running ${WANT:0:19}  healthy"
+    echo
+    echo "Redeployed and verified."
+    exit 0
+  fi
+
+  sleep 2
+done
+
+echo >&2
+echo "error: the container is not on the new image after 60s." >&2
+echo "       wanted ${WANT:0:19}" >&2
+echo "       running ${GOT:0:19}  health=${HEALTH:-unknown}" >&2
+exit 1
