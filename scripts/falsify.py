@@ -274,6 +274,29 @@ MUTATIONS = [
         why="a ride a minute behind schedule has its target moved off today",
     ),
     Mutation(
+        name="the bus being at the stop is not a countdown",
+        path=CORE / "Model" / "Headline.cs",
+        find="        JourneyStage.AtStop => Happening,",
+        replace="",
+        test="TheBusBeingAtTheStopIsNotACountdownToTheAfternoon",
+        why="the bus pulls up and the screen counts down to the afternoon, nine hours out",
+    ),
+    Mutation(
+        name="a ride never borrows the next run's time",
+        path=CORE / "Model" / "Headline.cs",
+        find=(
+            "        JourneyStage.ToSchool or JourneyStage.FromSchool =>\n"
+            "            journey.Target is DateTimeOffset end ? "
+            "new Headline(HeadlineKind.Time, end) : Nothing,"
+        ),
+        replace=(
+            "        JourneyStage.ToSchool or JourneyStage.FromSchool =>\n"
+            "            new Headline(HeadlineKind.Time, journey.Target ?? nextArrival),"
+        ),
+        test="ARideWithNoLearnedEndShowsNoTimeAtAll",
+        why="a ride with nothing learned falls back to a time from a different journey",
+    ),
+    Mutation(
         name="slack past a learned end of ride",
         path=CORE / "Prediction" / "JourneyStageMachine.cs",
         find="                ? target.Value + Tuning.RideOverrun",

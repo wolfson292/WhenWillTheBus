@@ -254,13 +254,14 @@ public sealed class BusPage : ContentPage
         _factsCard.IsVisible = true;
         _stage.Text = StageTitle(journey.Stage, rider?.Name);
 
-        // WHILE THE RIDER IS ABOARD, THE TIME THAT MATTERS IS WHERE THE RIDE
-        // ENDS. The prediction is about the next arrival at the HOME STOP, and
-        // it rolls on to the following run the moment a rider is collected --
-        // so on 22 Sep this page answered the morning ride to school with a
-        // countdown to the afternoon pickup, nine hours out.
+        // WHICH TIME TO LEAD WITH IS A RULE, NOT A CONDITION HERE -- see
+        // Headline.For, which is pure and tested because this went wrong twice.
+        // The prediction answers "when does the bus next reach the home stop"
+        // and rolls to the following run the moment this one is under way, so
+        // a live journey that borrows it is always wrong by most of a day.
         bool aboard = journey.Stage is JourneyStage.ToSchool or JourneyStage.FromSchool;
-        DateTimeOffset? headline = aboard ? journey.Target : prediction.Arrival;
+        Headline lead = Headline.For(journey, prediction.Arrival);
+        DateTimeOffset? headline = lead.Moment;
 
         // The bus going quiet is a state, not a failure to draw. The last
         // estimate stays up but loses its colour, so the screen says "this is
@@ -270,10 +271,20 @@ public sealed class BusPage : ContentPage
         Color accent = Theme.For(journey.Stage, headline, now);
         Color trackColour = reporting ? accent : Theme.Ink600;
 
-        _arrival.IsVisible = headline is not null;
-        _meridiem.IsVisible = headline is not null;
+        _arrival.IsVisible = lead.Kind is not HeadlineKind.None;
+        _meridiem.IsVisible = lead.Kind is HeadlineKind.Time;
 
-        if (headline is { } moment)
+        if (lead.Kind is HeadlineKind.Now)
+        {
+            // The bus is HERE, and there is nothing to count down to. The Lock
+            // Screen card has always said "now" at this moment; the app said
+            // "5:21 PM, in 9h 13m".
+            _arrival.Text = "now";
+            _countdown.Text = "at your stop";
+            _countdown.TextColor = accent;
+            _countdown.IsVisible = true;
+        }
+        else if (headline is { } moment)
         {
             DateTimeOffset local = moment.ToLocalTime();
             _arrival.Text = local.ToString("h:mm");
@@ -300,7 +311,8 @@ public sealed class BusPage : ContentPage
         // nothing as the bus nears the stop, because what is left to vary is the
         // part of the journey still to run. It describes the arrival at the
         // STOP, so it says nothing about a ride in progress.
-        bool haveBand = !aboard && prediction.Earliest is not null && prediction.Latest is not null;
+        bool haveBand = lead.Kind is HeadlineKind.Time
+            && !aboard && prediction.Earliest is not null && prediction.Latest is not null;
         _band.Text = haveBand
             ? $"{prediction.Earliest!.Value.ToLocalTime():h:mm} – {prediction.Latest!.Value.ToLocalTime():h:mm}"
             : string.Empty;
@@ -618,8 +630,14 @@ public sealed class BusPage : ContentPage
             return string.Empty;
         }
 
-        ScanEvent? pickup = rider.LastScanOf(ScanKind.Pickup);
-        ScanEvent? dropoff = rider.LastScanOf(ScanKind.Dropoff);
+        // TODAY, because the line says today. Reading the last scan of each
+        // kind whenever it happened put YESTERDAY afternoon's boarding and
+        // yesterday morning's drop-off under "Scans today" at 08:07 -- which
+        // reads as a journey that has already finished, on a morning where the
+        // rider had not yet got on the bus.
+        DateTime today = DateTime.Now.Date;
+        ScanEvent? pickup = LastToday(rider, ScanKind.Pickup, today);
+        ScanEvent? dropoff = LastToday(rider, ScanKind.Dropoff, today);
 
         List<string> parts = [];
         if (pickup is not null)
@@ -633,5 +651,20 @@ public sealed class BusPage : ContentPage
         }
 
         return parts.Count == 0 ? "none today" : string.Join(", ", parts);
+    }
+
+    /// <summary>The most recent scan of a kind that happened on a given local day.</summary>
+    private static ScanEvent? LastToday(Student rider, ScanKind kind, DateTime day)
+    {
+        for (int index = rider.Scans.Count - 1; index >= 0; index--)
+        {
+            ScanEvent scan = rider.Scans[index];
+            if (scan.Kind == kind && scan.Timestamp.ToLocalTime().Date == day)
+            {
+                return scan;
+            }
+        }
+
+        return null;
     }
 }
