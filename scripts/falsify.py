@@ -17,6 +17,9 @@ Usage:  python3 scripts/falsify.py
 """
 from __future__ import annotations
 
+import json
+import pathlib
+import signal
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -332,11 +335,56 @@ def run_test(test: str) -> bool:
     return result.returncode == 0
 
 
+# Where a mutation in flight is recorded, so a run that dies can be undone by
+# the next one.
+JOURNAL = ROOT / ".falsify-journal.json"
+
+
+def recover() -> None:
+    """Put back a mutation a previous run was killed in the middle of.
+
+    try/finally is not enough and cannot be: SIGKILL is not catchable, and
+    neither is the power going off. This happened -- a run was killed holding
+    Geo.cs open with its point-to-segment projection replaced by a snap to the
+    nearer end, which is a silent, plausible-looking degradation of every route
+    match in the app. It was caught by `git status` and luck.
+
+    So the mutation is written down BEFORE it is applied, and the next run puts
+    it back. The window where damage can survive is now one run long.
+    """
+    if not JOURNAL.exists():
+        return
+
+    try:
+        held = json.loads(JOURNAL.read_text())
+        path = pathlib.Path(held["path"])
+        path.write_text(held["original"])
+        print(f"  restored {path.name}, left mutated by a run that did not finish\n")
+    except (ValueError, KeyError, OSError) as error:
+        print(f"  !! could not undo {JOURNAL}: {error}", file=sys.stderr)
+        print("     check `git status` before trusting anything below.\n", file=sys.stderr)
+
+    JOURNAL.unlink(missing_ok=True)
+
+
+def restore_and_exit(signal_number: int, _frame: object) -> None:
+    recover()
+    sys.exit(128 + signal_number)
+
+
 def main() -> int:
     print("Falsifying the prediction engine: each guard removed, its test must fail.\n")
 
+    # Ctrl-C and an ordinary kill ARE catchable, so handle those directly
+    # rather than leaving them to the next run.
+    for catchable in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(catchable, restore_and_exit)
+
+    recover()
+
     if not run_suite():
         print("Baseline is already red. Fix the suite before falsifying it.")
+        print("If a previous run was killed, `git status` will show what it left behind.")
         return 1
 
     survivors: list[Mutation] = []
@@ -347,11 +395,13 @@ def main() -> int:
             survivors.append(mutation)
             continue
 
+        JOURNAL.write_text(json.dumps({"path": str(mutation.path), "original": original}))
         mutation.path.write_text(original.replace(mutation.find, mutation.replace, 1))
         try:
             still_passes = run_test(mutation.test)
         finally:
             mutation.path.write_text(original)
+            JOURNAL.unlink(missing_ok=True)
 
         if still_passes:
             print(f"  !! USELESS {mutation.name}")

@@ -40,3 +40,8 @@ ios/build/
 # committing the project file too would give two things to keep in step, and the
 # .pbxproj is the one nobody can review.
 ios/*.xcodeproj/
+
+# Written by scripts/falsify.py while a mutation is applied, and used by the
+# NEXT run to undo one that was killed mid-flight. Never useful to commit; its
+# presence means a run did not finish.
+.falsify-journal.json
