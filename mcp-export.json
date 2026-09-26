@@ -1,0 +1,38 @@
+{
+  "kicad": {
+    "type": "stdio",
+    "command": "node",
+    "args": [
+      "/Users/scottwolf/Downloads/GitHub/KiCAD-MCP-Server/dist/index.js"
+    ],
+    "env": {
+      "KICAD_PYTHON": "/Users/scottwolf/Downloads/GitHub/KiCAD-MCP-Server/venv/bin/python",
+      "PYTHONPATH": "/Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/lib/python3.9/site-packages",
+      "LOG_LEVEL": "info"
+    }
+  },
+  "ghidra": {
+    "type": "stdio",
+    "command": "/Users/scottwolf/.local/bin/ghidra_mcp_bridge",
+    "args": [
+      "--host",
+      "localhost",
+      "--port",
+      "8765"
+    ],
+    "env": {}
+  },
+  "portainer": {
+    "type": "stdio",
+    "command": "uvx",
+    "args": [
+      "--from",
+      "mcp-portainer~=2.42.0",
+      "mcp-portainer"
+    ],
+    "env": {
+      "PORTAINER_URL": "http://192.168.1.143:9000",
+      "PORTAINER_API_KEY": "ptr_N3oBC2t8o8QPBBhUZhIyVQQXhen5dQGMBpC6sFLiV/k="
+    }
+  }
+}

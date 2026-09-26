@@ -7,6 +7,7 @@ using WhenWillTheBus.Core.Model;
 using WhenWillTheBus.Core.Prediction;
 using WhenWillTheBus.Core.Storage;
 using WhenWillTheBus.Server.Devices;
+using WhenWillTheBus.Server.Media;
 using WhenWillTheBus.Server.LiveActivity;
 
 namespace WhenWillTheBus.Server.Monitoring;
@@ -31,6 +32,8 @@ public sealed class BusMonitor(
     LiveActivityPublisher publisher,
     DeviceRegistry registry,
     ClientRegistry clients,
+    RequestLog requests,
+    IOptions<MediaOptions> media,
     LocalClock clock,
     IOptions<MonitorOptions> options,
     ILogger<BusMonitor> logger) : BackgroundService
@@ -90,6 +93,8 @@ public sealed class BusMonitor(
         Directory.CreateDirectory(_options.DataDirectory);
         await registry.LoadAsync(_options.RegistryPath, token).ConfigureAwait(false);
         await clients.LoadAsync(_options.ClientsPath, token).ConfigureAwait(false);
+        await requests.LoadAsync(_options.RequestsPath, media.Value.HistoryLimit, token)
+            .ConfigureAwait(false);
 
         try
         {

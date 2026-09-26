@@ -28,7 +28,13 @@
 
 set -euo pipefail
 
-STACK_NAME="${1:-whenwillthebus}"
+SET_MEDIA=0
+if [ "${1:-}" = "--set-media" ]; then
+  SET_MEDIA=1
+  shift
+fi
+
+STACK_NAME="${STACK_NAME:-${1:-whenwillthebus}}"
 
 # ---------------------------------------------------------------- credentials
 read -r RESOLVED_URL RESOLVED_KEY <<<"$(python3 - <<'PY'
@@ -81,12 +87,31 @@ KEY
   exit 1
 }
 
-export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME
+export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME SET_MEDIA
 
 echo "==> Portainer $PORTAINER_URL"
 
 python3 - <<'PY'
 import json, os, sys, urllib.request, urllib.error
+
+# A STACK VARIABLE IS NOT A CONTAINER VARIABLE. Portainer substitutes these
+# into the compose file; only what the file then passes to the service reaches
+# the process. Setting them alone left the worker with no media configuration
+# at all and nothing anywhere saying why, so the file is edited to match.
+MEDIA_BLOCK = """
+      # Radarr and Sonarr, for the household's watch requests. Set by
+      # scripts/configure-media.sh, which reads the keys from the instances
+      # themselves rather than asking anybody to copy them about.
+      WWTB_Media__Radarr__Url: ${RADARR_URL}
+      WWTB_Media__Radarr__ApiKey: ${RADARR_API_KEY}
+      WWTB_Media__Radarr__RootFolder: ${RADARR_ROOT}
+      WWTB_Media__Radarr__QualityProfileId: ${RADARR_PROFILE}
+
+      WWTB_Media__Sonarr__Url: ${SONARR_URL}
+      WWTB_Media__Sonarr__ApiKey: ${SONARR_API_KEY}
+      WWTB_Media__Sonarr__RootFolder: ${SONARR_ROOT}
+      WWTB_Media__Sonarr__QualityProfileId: ${SONARR_PROFILE}
+"""
 
 BASE = os.environ["PORTAINER_URL"].rstrip("/")
 KEY = os.environ["PORTAINER_API_KEY"]
@@ -130,6 +155,43 @@ if blank:
 content = call(f"/stacks/{stack_id}/file").get("StackFileContent", "")
 if not content.strip():
     sys.exit("error: the stack file came back empty; refusing to write it back")
+
+if os.environ.get("SET_MEDIA") == "1" and "WWTB_Media__Radarr__Url" not in content:
+    # Inserted, not templated over: this file has diverged from the repository's
+    # on purpose -- real ports, the SWAG network, pull_policy -- and writing the
+    # repository's version back would quietly undo all of it.
+    marker = "      Logging__LogLevel__Default:"
+    if marker not in content:
+        sys.exit("error: cannot find where to add the media settings in the stack file")
+
+    content = content.replace(marker, MEDIA_BLOCK.rstrip() + "\n\n" + marker, 1)
+    print("==> Adding the media settings to the stack file")
+
+if os.environ.get("SET_MEDIA") == "1":
+    wanted = {
+        "RADARR_URL": os.environ["RADARR_URL"],
+        "RADARR_API_KEY": os.environ["RADARR_KEY"],
+        "RADARR_ROOT": os.environ.get("RADARR_ROOT", ""),
+        "RADARR_PROFILE": os.environ["PROFILE"],
+        "SONARR_URL": os.environ["SONARR_URL"],
+        "SONARR_API_KEY": os.environ["SONARR_KEY"],
+        "SONARR_ROOT": os.environ.get("SONARR_ROOT", ""),
+        "SONARR_PROFILE": os.environ["PROFILE"],
+    }
+
+    # Anything not named here keeps the value the server already has, which is
+    # what makes this safe to re-run.
+    by_name = {v.get("name"): v for v in env}
+    for name, value in wanted.items():
+        if name in by_name:
+            by_name[name]["value"] = value
+        else:
+            env.append({"name": name, "value": value})
+
+    # An earlier version set these long names directly, which did nothing.
+    env = [v for v in env if not str(v.get("name", "")).startswith("WWTB_Media__")]
+
+    print(f"==> Setting {len(wanted)} media variable(s); {len(env)} in total")
 
 print("==> Redeploying (recreates the containers; does NOT re-pull the image)")
 call(f"/stacks/{stack_id}?endpointId={endpoint_id}", "PUT", {

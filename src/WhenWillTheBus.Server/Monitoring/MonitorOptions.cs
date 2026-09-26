@@ -57,4 +57,7 @@ public sealed class MonitorOptions
 
     /// <summary>The phones that have introduced themselves, for the status page.</summary>
     public string ClientsPath => Path.Combine(DataDirectory, "clients.json");
+
+    /// <summary>What the household has asked to watch.</summary>
+    public string RequestsPath => Path.Combine(DataDirectory, "requests.json");
 }

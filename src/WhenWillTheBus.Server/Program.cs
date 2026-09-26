@@ -14,6 +14,7 @@ using WhenWillTheBus.Server.Api;
 using WhenWillTheBus.Server.Apns;
 using WhenWillTheBus.Server.Devices;
 using WhenWillTheBus.Server.LiveActivity;
+using WhenWillTheBus.Server.Media;
 using WhenWillTheBus.Server.Monitoring;
 
 // Container health check.
@@ -95,6 +96,15 @@ builder.Services.AddHttpClient<ApnsClient>(http =>
     http.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
     http.Timeout = TimeSpan.FromSeconds(20);
 });
+
+builder.Services
+    .AddOptions<MediaOptions>()
+    .Bind(builder.Configuration.GetSection(MediaOptions.Section));
+
+// Radarr and Sonarr are on the LAN and answer quickly or not at all; a long
+// timeout here would only hold a phone's search spinner for half a minute.
+builder.Services.AddHttpClient<ArrClient>(http => http.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddSingleton<RequestLog>();
 
 builder.Services.AddSingleton<DeviceRegistry>();
 builder.Services.AddSingleton<ClientRegistry>();
@@ -518,6 +528,107 @@ app.MapPost("/clients/hello", async (
 // The same thing as JSON, for anything that would rather not scrape a page.
 app.MapGet("/clients", (ClientRegistry clients) => Results.Ok(clients.All));
 
+// ---------------------------------------------------------------- requests
+//
+// Searching and asking for something to be downloaded. Behind the same bearer
+// key as everything else, which is the whole authorisation model here: anyone
+// who can reach this is the household.
+
+app.MapGet("/media/search", async (
+    string q,
+    string? kind,
+    ArrClient arr,
+    CancellationToken token) =>
+{
+    if (string.IsNullOrWhiteSpace(q))
+    {
+        return Results.BadRequest(new { error = "q is required" });
+    }
+
+    // Both by default. Somebody typing a title usually does not care which of
+    // two programs is going to hold it, and being asked to choose first is a
+    // question about our plumbing rather than about what they want to watch.
+    MediaKind[] kinds = kind?.ToLowerInvariant() switch
+    {
+        "movie" => [MediaKind.Movie],
+        "tv" or "series" => [MediaKind.Series],
+        _ => [MediaKind.Movie, MediaKind.Series],
+    };
+
+    List<MediaResult> results = [];
+    foreach (MediaKind each in kinds.Where(arr.Supports))
+    {
+        results.AddRange((await arr.SearchAsync(each, q, token)).Take(12));
+    }
+
+    return Results.Ok(new
+    {
+        results = results.Select(result => new
+        {
+            kind = result.Kind is MediaKind.Series ? "series" : "movie",
+            result.Title,
+            result.Year,
+            result.RemoteId,
+            result.Overview,
+            result.PosterUrl,
+            result.AlreadyHave,
+        }),
+    });
+});
+
+app.MapPost("/media/request", async (
+    MediaAsk ask,
+    ArrClient arr,
+    RequestLog log,
+    ClientRegistry clients,
+    LocalClock clock,
+    IOptions<MediaOptions> media,
+    CancellationToken token) =>
+{
+    MediaKind kind = string.Equals(ask.Kind, "series", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(ask.Kind, "tv", StringComparison.OrdinalIgnoreCase)
+            ? MediaKind.Series
+            : MediaKind.Movie;
+
+    if (ask.RemoteId <= 0)
+    {
+        return Results.BadRequest(new { error = "remoteId is required" });
+    }
+
+    AddOutcome outcome = media.Value.AutoApprove
+        ? await arr.AddAsync(kind, ask.RemoteId, token)
+        : new AddOutcome(false, "Saved — waiting to be approved.");
+
+    // WHO ASKED comes from the phone that asked, not from the body: the client
+    // identifier is one a phone has already proved by using it, and a name in
+    // a request body is whatever the sender felt like typing.
+    string? who = clients.Find(ask.ClientId)?.Label;
+
+    log.Record(new MediaRequest(
+        kind,
+        ask.Title ?? "(unnamed)",
+        ask.Year,
+        ask.RemoteId,
+        ask.PosterUrl,
+        who,
+        clock.Now,
+        outcome.Outcome));
+
+    await log.SaveAsync(token);
+    return Results.Ok(new { added = outcome.Added, outcome = outcome.Outcome });
+});
+
+app.MapGet("/media/requests", (RequestLog log) => Results.Ok(log.Recent().Select(request => new
+{
+    kind = request.Kind is MediaKind.Series ? "series" : "movie",
+    request.Title,
+    request.Year,
+    request.PosterUrl,
+    request.RequestedBy,
+    request.RequestedAt,
+    request.Outcome,
+})));
+
 // The management page. A browser reaches it with Basic auth; everything on it
 // is also available as JSON from /status, /rider/state and /clients.
 app.MapGet("/manage", (
@@ -590,6 +701,15 @@ internal sealed record ClientHello(
     string? AppVersion,
     string? Build,
     string? Environment);
+
+/// <summary>A request to add something, as a phone sends it.</summary>
+/// <remarks>
+/// Carries only an identifier and enough text to log; the payload the media
+/// server is actually given is rebuilt on this side from what the media server
+/// itself says about that identifier.
+/// </remarks>
+internal sealed record MediaAsk(
+    string? Kind, long RemoteId, string? Title, int? Year, string? PosterUrl, string? ClientId);
 
 /// <summary>What a phone sends after starting a Live Activity.</summary>
 /// <param name="Environment">"sandbox" or "production"; sandbox when a build did not say.</param>
