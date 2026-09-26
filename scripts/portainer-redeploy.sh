@@ -17,7 +17,8 @@
 # round-trip.
 #
 # Usage:
-#   scripts/portainer-redeploy.sh [stack-name]        # default: whenwillthebus
+#   scripts/portainer-redeploy.sh [stack-name]          # default: whenwillthebus
+#   scripts/portainer-redeploy.sh --pull magicmovienight # image from a registry
 #
 # Configuration, in order of preference:
 #   PORTAINER_URL       e.g. http://192.168.1.143:9000
@@ -34,14 +35,19 @@ wwtb_help "${BASH_SOURCE[0]}" "$@"
 
 SET_MEDIA=0
 SET_ADMIN=0
-case "${1:-}" in
-  --set-media) SET_MEDIA=1; shift ;;
-  --set-admin) SET_ADMIN=1; shift ;;
-esac
-
-case "${1:-}" in
-  -*) wwtb_unknown "${BASH_SOURCE[0]}" "$1" ;;
-esac
+PULL=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --set-media) SET_MEDIA=1; shift ;;
+    --set-admin) SET_ADMIN=1; shift ;;
+    # For a stack whose image comes from a REGISTRY rather than being built on
+    # the host. Without it Portainer reuses whatever is already pulled, so a
+    # redeploy after a CI build quietly redeploys the old image.
+    --pull) PULL=1; shift ;;
+    -*) wwtb_unknown "${BASH_SOURCE[0]}" "$1" ;;
+    *) break ;;
+  esac
+done
 
 STACK_NAME="${STACK_NAME:-${1:-whenwillthebus}}"
 
@@ -96,7 +102,7 @@ KEY
   exit 1
 }
 
-export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME SET_MEDIA SET_ADMIN
+export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME SET_MEDIA SET_ADMIN PULL
 
 echo "==> Portainer $PORTAINER_URL"
 
@@ -242,14 +248,17 @@ if os.environ.get("SET_MEDIA") == "1":
 
     print(f"==> Setting {len(wanted)} media variable(s); {len(env)} in total")
 
-print("==> Redeploying (recreates the containers; does NOT re-pull the image)")
+pulling = os.environ.get("PULL") == "1"
+print(f"==> Redeploying (recreates the containers; {'re-pulls' if pulling else 'does NOT re-pull'} the image)")
 call(f"/stacks/{stack_id}?endpointId={endpoint_id}", "PUT", {
     "StackFileContent": content,
     "Env": env,
     "Prune": False,
-    # The image was just built ON the Docker host, so there is nothing in a
-    # registry to pull and asking would only fail or fetch something older.
-    "PullImage": False,
+    # False for a stack whose image was just built ON the Docker host: there is
+    # nothing in a registry to pull, and asking would only fail. True for one
+    # that comes from a registry, where NOT pulling silently redeploys whatever
+    # is already on the box.
+    "PullImage": os.environ.get("PULL") == "1",
 })
 
 print("    accepted")
