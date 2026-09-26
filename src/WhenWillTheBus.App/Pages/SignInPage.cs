@@ -28,6 +28,37 @@ public sealed class SignInPage : ContentPage
     private readonly Entry _deviceLabel = new() { Placeholder = "This phone's name, e.g. Angela's iPhone" };
     private readonly Label _status = new() { FontSize = 13, TextColor = Theme.TextDim };
 
+    /// <summary>Where a phone is sent to install an update.</summary>
+    /// <remarks>
+    /// A notification cannot open another app; it opens this one, which opens
+    /// this. itms-beta:// is TestFlight's own scheme, and the number is the App
+    /// Store Connect app id.
+    /// </remarks>
+    private const string TestFlightUrl = "itms-beta://beta.itunes.apple.com/v1/app/6814865915";
+
+    // Hidden unless the worker says this key is an admin one. Not merely
+    // disabled: offering a control that always refuses is worse than not
+    // offering it at all.
+    private readonly Label _adminHeading = new()
+    {
+        Text = "Family phones",
+        FontSize = 13,
+        FontAttributes = FontAttributes.Bold,
+        TextColor = Theme.TextDim,
+        Margin = new Thickness(0, 18, 0, 2),
+        IsVisible = false,
+    };
+
+    private readonly Label _adminNote = new()
+    {
+        Text = "Every phone that has opened the app. Nudge one to remind them to update.",
+        FontSize = 12,
+        TextColor = Theme.TextDim,
+        IsVisible = false,
+    };
+
+    private readonly VerticalStackLayout _phones = new() { Spacing = 8, IsVisible = false };
+
     public SignInPage(CredentialStore credentials, ServerLink server, BusService bus)
     {
         _credentials = credentials;
@@ -61,6 +92,10 @@ public sealed class SignInPage : ContentPage
                     Action("Share a setup link", OnShareSetup),
                     Note("Sends a link that configures another phone in one tap. It carries the "
                         + "access key, so send it the way you would send a password."),
+
+                    _adminHeading,
+                    _adminNote,
+                    _phones,
 
                     Heading("This phone"),
                     Note("A name for the worker's status page, so its list of connected phones "
@@ -104,6 +139,7 @@ public sealed class SignInPage : ContentPage
         }
 
         _deviceLabel.Text = DeviceIdentity.Label;
+        ShowAdminAsync().FireAndForget();
 
         (string Url, string Key)? worker = await _credentials.ReadServerAsync();
         if (worker is not null)
@@ -111,6 +147,111 @@ public sealed class SignInPage : ContentPage
             _serverUrl.Text = worker.Value.Url;
             _serverKey.Text = worker.Value.Key;
         }
+    }
+
+    /// <summary>Show the admin section, if the worker says this phone is one.</summary>
+    private async Task ShowAdminAsync()
+    {
+        WorkerRole role = await _server.RoleAsync();
+
+        if (role.UpdateAvailable)
+        {
+            // Belt as well as braces. The push is how this is normally heard,
+            // and one swiped away -- or never permitted -- would otherwise
+            // leave no trace anywhere in the app.
+            _status.Text = "An update is waiting in TestFlight.";
+        }
+
+        _adminHeading.IsVisible = _adminNote.IsVisible = _phones.IsVisible = role.IsAdmin;
+        if (!role.IsAdmin)
+        {
+            return;
+        }
+
+        _phones.Clear();
+        foreach (FamilyPhone phone in await _server.PhonesAsync())
+        {
+            _phones.Add(PhoneRow(phone));
+        }
+    }
+
+    private View PhoneRow(FamilyPhone phone)
+    {
+        Label detail = new()
+        {
+            Text = Describe(phone),
+            FontSize = 11,
+            TextColor = phone.UpdateAvailable ? Theme.Bus : Theme.TextDim,
+        };
+
+        Button nudge = new()
+        {
+            Text = phone.UpdateAvailable ? "Remind" : "Nudge",
+            FontSize = 12,
+            Padding = new Thickness(10, 4),
+
+            // Disabled rather than hidden, with the reason in the line above:
+            // a phone that has refused notifications is a fact worth seeing.
+            IsEnabled = phone.Reachable,
+        };
+
+        nudge.Clicked += async (_, _) =>
+        {
+            nudge.IsEnabled = false;
+            nudge.Text = "Sending…";
+
+            (string title, string body) = phone.UpdateAvailable
+                ? ("Update available", "A new version of Wolf Family is ready in TestFlight.")
+                : ("Wolf Family", "Open the app when you get a moment.");
+
+            // Somewhere to go only when there IS somewhere to go. A plain nudge
+            // that dropped somebody into TestFlight for no reason would be
+            // worse than no nudge.
+            string? openUrl = phone.UpdateAvailable ? TestFlightUrl : null;
+
+            detail.Text = await _server.NudgeAsync(phone.Id, title, body, openUrl);
+            nudge.Text = phone.UpdateAvailable ? "Remind" : "Nudge";
+            nudge.IsEnabled = phone.Reachable;
+        };
+
+        Grid row = new()
+        {
+            ColumnDefinitions = [new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto)],
+            ColumnSpacing = 8,
+        };
+
+        row.Add(new VerticalStackLayout
+        {
+            Spacing = 0,
+            Children =
+            {
+                new Label { Text = phone.Label ?? "unnamed", FontSize = 14, TextColor = Theme.Text },
+                detail,
+            },
+        }, 0);
+        row.Add(nudge, 1);
+        return row;
+    }
+
+    private static string Describe(FamilyPhone phone)
+    {
+        List<string> parts = [phone.Model ?? "unknown model", phone.Sandbox ? "development" : "TestFlight"];
+
+        if (phone.UpdateAvailable)
+        {
+            parts.Add($"on {phone.Build} — update waiting");
+        }
+        else if (phone.Build is string build)
+        {
+            parts.Add($"on {build}");
+        }
+
+        if (!phone.Reachable)
+        {
+            parts.Add("notifications not allowed");
+        }
+
+        return string.Join(" · ", parts);
     }
 
     private async void OnSaveLabel(object? sender, EventArgs e)
@@ -171,10 +312,20 @@ public sealed class SignInPage : ContentPage
             return;
         }
 
+        // NOT necessarily the key this phone holds. An admin's phone holds the
+        // admin key, and sharing that would make the recipient an admin
+        // without either of them being told.
+        string? key = await _server.ShareableKeyAsync();
+        if (key is null)
+        {
+            _status.Text = "Could not work out which key to share.";
+            return;
+        }
+
         await Share.RequestAsync(new ShareTextRequest
         {
-            Title = "Set up When Will The Bus",
-            Text = SetupLink.Build(worker.Value.Url, worker.Value.Key),
+            Title = "Set up Wolf Family",
+            Text = SetupLink.Build(worker.Value.Url, key),
         });
     }
 

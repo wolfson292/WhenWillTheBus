@@ -2,8 +2,22 @@
 
 using System.Net.Http.Headers;
 using System.Text;
+using WhenWillTheBus.Core.Api;
 
 namespace WhenWillTheBus.App.Services;
+
+/// <summary>What the worker says this phone may do.</summary>
+public sealed record WorkerRole(bool IsAdmin, bool UpdateAvailable, string? LatestBuild);
+
+/// <summary>Another phone in the household, as an admin sees it.</summary>
+public sealed record FamilyPhone(
+    string Id,
+    string? Label,
+    string? Model,
+    string? Build,
+    bool UpdateAvailable,
+    bool Reachable,
+    bool Sandbox);
 
 /// <summary>
 /// Tells the always-on worker which Live Activity to keep up to date.
@@ -113,6 +127,179 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
         catch (HttpRequestException)
         {
             return false;
+        }
+    }
+
+    /// <summary>What this phone is allowed to do, and whether it is out of date.</summary>
+    /// <remarks>
+    /// ASKED OF THE WORKER, not worked out here. A phone cannot tell an admin
+    /// key from an ordinary one by looking at it, and should not try: the
+    /// answer is whatever the worker will actually honour.
+    /// </remarks>
+    public async Task<WorkerRole> RoleAsync(CancellationToken cancellationToken = default)
+    {
+        string query = DeviceIdentity.VendorId is string id
+            ? $"?clientId={System.Net.WebUtility.UrlEncode(id)}"
+            : string.Empty;
+
+        string? body = await ReadAsync($"/me{query}", cancellationToken);
+        if (body is null)
+        {
+            return new WorkerRole(false, false, null);
+        }
+
+        try
+        {
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(body);
+            return new WorkerRole(
+                document.RootElement.Bool("admin"),
+                document.RootElement.Bool("updateAvailable"),
+                document.RootElement.String("latestBuild"));
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return new WorkerRole(false, false, null);
+        }
+    }
+
+    /// <summary>
+    /// The key a setup link should carry.
+    /// </summary>
+    /// <remarks>
+    /// The stored key for an ordinary phone, and the FAMILY key when this one
+    /// is an admin -- because sharing the admin key would quietly make the
+    /// recipient an admin, and neither phone would show any sign of it.
+    /// </remarks>
+    public async Task<string?> ShareableKeyAsync(CancellationToken cancellationToken = default)
+    {
+        (string Url, string Key)? server = await credentials.ReadServerAsync();
+        if (server is null)
+        {
+            return null;
+        }
+
+        string? body = await ReadAsync("/admin/family-key", cancellationToken);
+        if (body is null)
+        {
+            // Not an admin, or the worker is unreachable. Either way the key
+            // this phone holds is the one to share.
+            return server.Value.Key;
+        }
+
+        try
+        {
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(body);
+            return document.RootElement.String("key") ?? server.Value.Key;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return server.Value.Key;
+        }
+    }
+
+    /// <summary>The other phones, for an admin screen. Empty unless this key is an admin one.</summary>
+    public async Task<IReadOnlyList<FamilyPhone>> PhonesAsync(CancellationToken cancellationToken = default)
+    {
+        string? body = await ReadAsync("/admin/phones", cancellationToken);
+        if (body is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(body);
+            List<FamilyPhone> phones = [];
+            foreach (System.Text.Json.JsonElement item in document.RootElement.Array("phones"))
+            {
+                phones.Add(new FamilyPhone(
+                    item.String("id") ?? string.Empty,
+                    item.String("label"),
+                    item.String("model"),
+                    item.String("build"),
+                    item.Bool("updateAvailable"),
+                    item.Bool("reachable"),
+                    item.Bool("sandbox")));
+            }
+
+            return phones;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>Send somebody a notification. Returns what to show the sender.</summary>
+    public async Task<string> NudgeAsync(
+        string clientId, string title, string body, string? openUrl = null,
+        CancellationToken cancellationToken = default)
+    {
+        (string Url, string Key)? server = await credentials.ReadServerAsync();
+        if (server is null)
+        {
+            return "No worker is configured.";
+        }
+
+        string payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            clientId,
+            title,
+            body,
+            openUrl,
+        });
+
+        try
+        {
+            using HttpRequestMessage request = new(HttpMethod.Post, $"{server.Value.Url}/admin/notify")
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", server.Value.Key);
+
+            using HttpResponseMessage response = await http.SendAsync(request, cancellationToken);
+            string said = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                return "This phone is not an admin.";
+            }
+
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(said);
+            if (document.RootElement.Bool("sent"))
+            {
+                return "Sent.";
+            }
+
+            return document.RootElement.String("error") ?? "It was not delivered.";
+        }
+        catch (Exception error) when (error is HttpRequestException or System.Text.Json.JsonException)
+        {
+            return "Could not reach the worker.";
+        }
+    }
+
+    private async Task<string?> ReadAsync(string path, CancellationToken cancellationToken)
+    {
+        (string Url, string Key)? server = await credentials.ReadServerAsync();
+        if (server is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using HttpRequestMessage request = new(HttpMethod.Get, $"{server.Value.Url}{path}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", server.Value.Key);
+
+            using HttpResponseMessage response = await http.SendAsync(request, cancellationToken);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadAsStringAsync(cancellationToken)
+                : null;
+        }
+        catch (HttpRequestException)
+        {
+            return null;
         }
     }
 

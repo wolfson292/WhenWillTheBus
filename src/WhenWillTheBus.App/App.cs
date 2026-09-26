@@ -129,6 +129,20 @@ public sealed class App : Application
         // property, and half-done that reads as a bug rather than a theme.
         UserAppTheme = AppTheme.Dark;
 
+        // A notification cannot open another app, so "take her to TestFlight"
+        // is really "open this app, which opens TestFlight". The URL comes
+        // from our own payload and is checked before it is followed: a push is
+        // data arriving over the network, and following any URL in one would
+        // let whoever can send us a push send the app anywhere.
+        PushRegistrar.OpenRequested += url =>
+        {
+            if (Uri.TryCreate(url, UriKind.Absolute, out Uri? destination)
+                && destination.Scheme is "itms-beta" or "https")
+            {
+                MainThread.BeginInvokeOnMainThread(() => Launcher.OpenAsync(destination).FireAndForget());
+            }
+        };
+
         // FIVE, AND NOT SIX. iOS collapses a seventh-of-a-tab-bar into a "More"
         // list, which buries whatever lands in it -- so Watch takes the tab
         // that Scans had, and the scans are reached by tapping the line about

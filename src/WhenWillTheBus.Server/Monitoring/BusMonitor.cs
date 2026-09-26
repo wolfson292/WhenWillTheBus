@@ -33,6 +33,7 @@ public sealed class BusMonitor(
     DeviceRegistry registry,
     ClientRegistry clients,
     RequestLog requests,
+    ReleaseTracker releases,
     IOptions<MediaOptions> media,
     LocalClock clock,
     IOptions<MonitorOptions> options,
@@ -95,6 +96,7 @@ public sealed class BusMonitor(
         await clients.LoadAsync(_options.ClientsPath, token).ConfigureAwait(false);
         await requests.LoadAsync(_options.RequestsPath, media.Value.HistoryLimit, token)
             .ConfigureAwait(false);
+        await releases.LoadAsync(_options.ReleasePath, token).ConfigureAwait(false);
 
         try
         {

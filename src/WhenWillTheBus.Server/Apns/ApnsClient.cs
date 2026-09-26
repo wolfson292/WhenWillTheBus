@@ -98,7 +98,47 @@ public sealed class ApnsClient(
             deviceToken, "end", contentState, PushUrgency.TimeSensitive, null, null, dismissAt, sandbox,
             cancellationToken);
 
-    private async Task<PushResult> SendAsync(
+    /// <summary>
+    /// An ordinary notification: a title, a body, and a banner on the phone.
+    /// </summary>
+    /// <remarks>
+    /// A DIFFERENT KIND OF PUSH FROM EVERYTHING ELSE HERE, in three ways that
+    /// each fail silently if got wrong. The topic is the bare bundle id rather
+    /// than the .push-type.liveactivity one; the push type is "alert"; and the
+    /// token is the DEVICE's, from registerForRemoteNotifications, not an
+    /// activity's. Apple accepts a mismatched topic with a 400 that names the
+    /// topic, which is the one merciful part.
+    /// </remarks>
+    public Task<PushResult> AlertAsync(
+        string deviceToken,
+        string title,
+        string body,
+        string? openUrl = null,
+        bool? sandbox = null,
+        CancellationToken cancellationToken = default)
+    {
+        StringBuilder payload = new();
+        payload.Append("{\"aps\":{\"alert\":{\"title\":")
+            .Append(JsonSerializer.Serialize(title))
+            .Append(",\"body\":")
+            .Append(JsonSerializer.Serialize(body))
+            .Append("},\"sound\":\"default\"}");
+
+        // Carried beside the alert rather than inside it: the app reads this
+        // when somebody taps, and iOS ignores anything it does not recognise.
+        if (!string.IsNullOrWhiteSpace(openUrl))
+        {
+            payload.Append(",\"openUrl\":").Append(JsonSerializer.Serialize(openUrl));
+        }
+
+        payload.Append('}');
+
+        return PostAsync(
+            deviceToken, payload.ToString(), _options.BundleId, "alert", "10", sandbox, "alert",
+            cancellationToken);
+    }
+
+    private Task<PushResult> SendAsync(
         string deviceToken,
         string eventName,
         ILiveActivityState contentState,
@@ -107,9 +147,31 @@ public sealed class ApnsClient(
         (string Title, string Body)? alert,
         DateTimeOffset? dismissAt,
         bool? sandbox,
+        CancellationToken cancellationToken) =>
+        PostAsync(
+            deviceToken,
+            BuildPayload(eventName, contentState, staleAfter, alert, dismissAt),
+            _options.LiveActivityTopic,
+            "liveactivity",
+
+            // Priority 10 may interrupt; 5 is coalesced by the system and is
+            // what a periodic refresh deserves.
+            urgency == PushUrgency.TimeSensitive ? "10" : "5",
+            sandbox,
+            eventName,
+            cancellationToken);
+
+    private async Task<PushResult> PostAsync(
+        string deviceToken,
+        string payload,
+        string topic,
+        string pushType,
+        string priority,
+        bool? sandbox,
+        string what,
         CancellationToken cancellationToken)
     {
-        string payload = BuildPayload(eventName, contentState, staleAfter, alert, dismissAt);
+        string eventName = what;
         string host = sandbox is null ? _options.Host : ApnsOptions.HostFor(sandbox.Value);
 
         using HttpRequestMessage request = new(
@@ -123,13 +185,9 @@ public sealed class ApnsClient(
 
         request.Headers.TryAddWithoutValidation(
             "authorization", $"bearer {await tokens.TokenAsync(cancellationToken).ConfigureAwait(false)}");
-        request.Headers.TryAddWithoutValidation("apns-topic", _options.LiveActivityTopic);
-        request.Headers.TryAddWithoutValidation("apns-push-type", "liveactivity");
-
-        // Priority 10 may interrupt; 5 is coalesced by the system and is what a
-        // periodic refresh deserves.
-        request.Headers.TryAddWithoutValidation(
-            "apns-priority", urgency == PushUrgency.TimeSensitive ? "10" : "5");
+        request.Headers.TryAddWithoutValidation("apns-topic", topic);
+        request.Headers.TryAddWithoutValidation("apns-push-type", pushType);
+        request.Headers.TryAddWithoutValidation("apns-priority", priority);
 
         try
         {

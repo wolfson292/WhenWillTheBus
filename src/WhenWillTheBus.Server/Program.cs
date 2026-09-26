@@ -108,6 +108,7 @@ builder.Services.AddSingleton<RequestLog>();
 
 builder.Services.AddSingleton<DeviceRegistry>();
 builder.Services.AddSingleton<ClientRegistry>();
+builder.Services.AddSingleton<ReleaseTracker>();
 builder.Services.AddSingleton<LiveActivityPublisher>();
 builder.Services.AddSingleton<BusMonitor>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<BusMonitor>());
@@ -122,6 +123,32 @@ if (string.IsNullOrWhiteSpace(apiKey))
     app.Logger.LogCritical(
         "Api:Key is not set. This service knows a child's live location and will not "
         + "serve unauthenticated requests. Set WWTB_Api__Key to a long random value.");
+    return 1;
+}
+
+// A SECOND KEY, FOR THE THINGS ONLY ONE PERSON SHOULD DO.
+//
+// Not a login and not a role on a person: it is a second bearer key that also
+// opens everything the family key opens. Deliberately not "whichever phone set
+// the worker up" -- identifierForVendor is reissued when an app is removed and
+// reinstalled, which this phone does several times a week, so admin would be
+// lost on a whim and impossible to get back from the phone itself.
+//
+// Unset means nobody is an admin, and the admin endpoints answer 403 to
+// everyone. That is the right default: a household that has not asked for this
+// does not silently acquire someone who can push notifications to everyone
+// else's phone.
+string? adminKey = builder.Configuration["Api:AdminKey"];
+if (string.IsNullOrWhiteSpace(adminKey))
+{
+    app.Logger.LogInformation("Api:AdminKey is not set; admin features are off.");
+    adminKey = null;
+}
+else if (string.Equals(adminKey, apiKey, StringComparison.Ordinal))
+{
+    app.Logger.LogCritical(
+        "Api:AdminKey is the same as Api:Key, which makes every phone an admin. "
+        + "Set it to a different long random value, or unset it.");
     return 1;
 }
 
@@ -162,10 +189,20 @@ app.Use(async (context, next) =>
         }
     }
 
-    if (offered is null
-        || !CryptographicOperations.FixedTimeEquals(
+    static bool Matches(string? offered, string? secret) =>
+        offered is not null
+        && secret is not null
+        && CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(offered),
-            Encoding.UTF8.GetBytes(apiKey)))
+            Encoding.UTF8.GetBytes(secret));
+
+    // BOTH ARE ALWAYS COMPARED, even once the first matches. Stopping early
+    // would make the response time say which key was presented, and the whole
+    // point of the fixed-time comparison is that it says nothing.
+    bool isFamily = Matches(offered, apiKey);
+    bool isAdmin = Matches(offered, adminKey);
+
+    if (!isFamily && !isAdmin)
     {
         // Only the page challenges. A 401 carrying this header makes a browser
         // prompt, which is right for a person and wrong for the app -- it would
@@ -176,6 +213,17 @@ app.Use(async (context, next) =>
         }
 
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return;
+    }
+
+    context.Items["admin"] = isAdmin;
+
+    // /admin/* is refused rather than hidden. A 404 would be tidier and would
+    // also mean a family phone whose admin key had been revoked could not tell
+    // the difference between "not allowed" and "gone".
+    if (context.Request.Path.StartsWithSegments("/admin") && !isAdmin)
+    {
+        context.Response.StatusCode = StatusCodes.Status403Forbidden;
         return;
     }
 
@@ -495,6 +543,22 @@ static (bool Healthy, string Verdict) Interpret(PushResult result, ApnsOptions a
 // model name since iOS 16 without an entitlement Apple grants for managed
 // fleets. Nothing else identifying is accepted: no advertising identifier, no
 // UDID or serial, no MAC address, no phone number, no account.
+// Which key is this, and is there anything to install?
+//
+// Asked by the app on every start. It is how a phone learns it is an admin --
+// the app cannot tell from the key itself, and should not try.
+app.MapGet("/me", (HttpContext context, ReleaseTracker releases, ClientRegistry clients, string? clientId) =>
+{
+    ClientIdentity? me = clients.Find(clientId);
+    return Results.Ok(new
+    {
+        admin = context.Items["admin"] is true,
+        label = me?.Label,
+        latestBuild = releases.Latest,
+        updateAvailable = releases.IsBehind(me?.Build),
+    });
+});
+
 app.MapPost("/clients/hello", async (
     ClientHello hello,
     ClientRegistry clients,
@@ -518,7 +582,12 @@ app.MapPost("/clients/hello", async (
             !string.Equals(hello.Environment, "production", StringComparison.OrdinalIgnoreCase),
             now,
             now,
-            1),
+            1)
+        {
+            // Null when the phone has not been granted notification permission,
+            // which is a state to keep rather than a value to write over.
+            DeviceToken = Trimmed(hello.DeviceToken, 200),
+        },
         now);
 
     await clients.SaveAsync(token);
@@ -618,6 +687,146 @@ app.MapPost("/media/request", async (
     return Results.Ok(new { added = outcome.Added, outcome = outcome.Outcome });
 });
 
+// ------------------------------------------------------------------- admin
+//
+// Behind the second key. The middleware refuses /admin/* to anyone without it,
+// so nothing below re-checks.
+
+/// <summary>Everything an admin screen needs about the other phones.</summary>
+app.MapGet("/admin/phones", (ClientRegistry clients, ReleaseTracker releases, LocalClock clock) =>
+{
+    DateTimeOffset now = clock.Now;
+    return Results.Ok(new
+    {
+        latestBuild = releases.Latest,
+        phones = clients.All.Select(phone => new
+        {
+            phone.Id,
+            phone.Label,
+            phone.Model,
+            phone.SystemVersion,
+            phone.AppVersion,
+            phone.Build,
+            phone.Sandbox,
+            phone.LastSeen,
+            updateAvailable = releases.IsBehind(phone.Build),
+
+            // Whether a nudge would reach it at all. Without this the button
+            // is offered for phones that cannot receive one, and the failure
+            // looks like the message being ignored.
+            reachable = phone.DeviceToken is not null,
+        }),
+    });
+});
+
+/// <summary>
+/// The family key, so an admin's setup link hands out the right one.
+/// </summary>
+/// <remarks>
+/// NOT AN ESCALATION: whoever can call this already holds the admin key, which
+/// opens strictly more than the family one. It exists because the alternative
+/// is worse -- the app shares whatever key this phone holds, so an admin
+/// sharing a setup link would silently make the recipient an admin too, and
+/// nothing on either phone would ever say so.
+/// </remarks>
+app.MapGet("/admin/family-key", (IConfiguration configuration) =>
+    Results.Ok(new { key = configuration["Api:Key"] }));
+
+/// <summary>Send somebody a notification.</summary>
+app.MapPost("/admin/notify", async (
+    AdminNotice notice,
+    ClientRegistry clients,
+    ApnsClient apns,
+    IOptions<ApnsOptions> apnsOptions,
+    ILoggerFactory logging,
+    CancellationToken token) =>
+{
+    ClientIdentity? target = clients.Find(notice.ClientId);
+    if (target is null)
+    {
+        return Results.NotFound(new { error = "no such phone" });
+    }
+
+    if (target.DeviceToken is not string deviceToken)
+    {
+        return Results.BadRequest(new
+        {
+            error = $"{target.Label ?? "That phone"} has not allowed notifications.",
+        });
+    }
+
+    string title = string.IsNullOrWhiteSpace(notice.Title) ? "Wolf Family" : notice.Title!.Trim();
+    string body = string.IsNullOrWhiteSpace(notice.Body) ? "Tap to open the app." : notice.Body!.Trim();
+
+    PushResult result = await apns.AlertAsync(
+        deviceToken, title, body, notice.OpenUrl, target.Sandbox, token);
+
+    logging.CreateLogger("Admin").LogInformation(
+        "Nudged {Phone}: {Ok}", target.Label ?? ClientRegistry.Short(target.Id), result.Delivered);
+
+    return result.Delivered
+        ? Results.Ok(new { sent = true })
+        : Results.Ok(new { sent = false, error = result.Reason ?? "APNs refused it." });
+});
+
+/// <summary>
+/// Announce the build everybody should be on, and tell whoever is not.
+/// </summary>
+/// <remarks>
+/// Posted by scripts/build-testflight.sh after a SUCCESSFUL upload. The worker
+/// could have asked App Store Connect instead, which would mean putting the
+/// .p8 and the issuer id on this box to answer a question the upload already
+/// knew.
+/// </remarks>
+app.MapPost("/admin/build", async (
+    BuildAnnouncement announcement,
+    ReleaseTracker releases,
+    ClientRegistry clients,
+    ApnsClient apns,
+    IOptions<MediaOptions> _,
+    LocalClock clock,
+    ILoggerFactory logging,
+    CancellationToken token) =>
+{
+    if (string.IsNullOrWhiteSpace(announcement.Build))
+    {
+        return Results.BadRequest(new { error = "build is required" });
+    }
+
+    await releases.AnnounceAsync(announcement.Build.Trim(), clock.Now, token);
+    ILogger log = logging.CreateLogger("Admin");
+
+    List<object> told = [];
+    if (announcement.Notify)
+    {
+        foreach (ClientIdentity phone in clients.All)
+        {
+            // Only phones that are BEHIND and can be reached. A development
+            // phone reports build "1" for ever and is excluded by IsBehind, so
+            // this does not nag the person who just built it.
+            if (!releases.IsBehind(phone.Build) || phone.DeviceToken is not string deviceToken)
+            {
+                continue;
+            }
+
+            PushResult result = await apns.AlertAsync(
+                deviceToken,
+                "Update available",
+                "A new version of Wolf Family is ready in TestFlight.",
+                announcement.OpenUrl ?? TestFlight,
+                phone.Sandbox,
+                token);
+
+            told.Add(new { phone.Label, sent = result.Delivered, error = result.Reason });
+            log.LogInformation(
+                "Told {Phone} about {Build}: {Ok}",
+                phone.Label ?? ClientRegistry.Short(phone.Id), announcement.Build, result.Delivered);
+        }
+    }
+
+    return Results.Ok(new { latest = releases.Latest, notified = told });
+});
+
 app.MapGet("/media/requests", (RequestLog log) => Results.Ok(log.Recent().Select(request => new
 {
     kind = request.Kind is MediaKind.Series ? "series" : "movie",
@@ -700,7 +909,25 @@ internal sealed record ClientHello(
     string? SystemVersion,
     string? AppVersion,
     string? Build,
-    string? Environment);
+    string? Environment,
+    string? DeviceToken);
+
+/// <summary>Where a phone should be sent to install an update.</summary>
+/// <remarks>
+/// A notification cannot open another app directly; it opens OURS, and the app
+/// opens this. itms-beta:// is the scheme TestFlight registers, and the number
+/// is the App Store Connect app id.
+/// </remarks>
+internal static partial class Program
+{
+    public const string TestFlight = "itms-beta://beta.itunes.apple.com/v1/app/6814865915";
+}
+
+/// <summary>A notification an admin is sending by hand.</summary>
+internal sealed record AdminNotice(string ClientId, string? Title, string? Body, string? OpenUrl);
+
+/// <summary>The build everybody should now be running.</summary>
+internal sealed record BuildAnnouncement(string Build, bool Notify = true, string? OpenUrl = null);
 
 /// <summary>A request to add something, as a phone sends it.</summary>
 /// <remarks>

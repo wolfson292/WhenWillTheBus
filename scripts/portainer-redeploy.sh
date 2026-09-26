@@ -33,10 +33,11 @@ set -euo pipefail
 wwtb_help "${BASH_SOURCE[0]}" "$@"
 
 SET_MEDIA=0
-if [ "${1:-}" = "--set-media" ]; then
-  SET_MEDIA=1
-  shift
-fi
+SET_ADMIN=0
+case "${1:-}" in
+  --set-media) SET_MEDIA=1; shift ;;
+  --set-admin) SET_ADMIN=1; shift ;;
+esac
 
 case "${1:-}" in
   -*) wwtb_unknown "${BASH_SOURCE[0]}" "$1" ;;
@@ -95,7 +96,7 @@ KEY
   exit 1
 }
 
-export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME SET_MEDIA
+export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME SET_MEDIA SET_ADMIN
 
 echo "==> Portainer $PORTAINER_URL"
 
@@ -106,6 +107,12 @@ import json, os, sys, urllib.request, urllib.error
 # into the compose file; only what the file then passes to the service reaches
 # the process. Setting them alone left the worker with no media configuration
 # at all and nothing anywhere saying why, so the file is edited to match.
+ADMIN_BLOCK = """
+      # A SECOND key, for the one phone allowed to see the others and send them
+      # notifications. Unset means nobody can, which is the right default.
+      WWTB_Api__AdminKey: ${WWTB_ADMIN_KEY}
+"""
+
 MEDIA_BLOCK = """
       # Radarr and Sonarr, for the household's watch requests. Set by
       # scripts/configure-media.sh, which reads the keys from the instances
@@ -163,6 +170,27 @@ if blank:
 content = call(f"/stacks/{stack_id}/file").get("StackFileContent", "")
 if not content.strip():
     sys.exit("error: the stack file came back empty; refusing to write it back")
+
+if os.environ.get("SET_ADMIN") == "1" and "WWTB_Api__AdminKey" not in content:
+    marker = "      Logging__LogLevel__Default:"
+    if marker not in content:
+        sys.exit("error: cannot find where to add the admin key in the stack file")
+
+    content = content.replace(marker, ADMIN_BLOCK.rstrip() + "\n\n" + marker, 1)
+    print("==> Adding the admin key to the stack file")
+
+if os.environ.get("SET_ADMIN") == "1":
+    by_name = {v.get("name"): v for v in env}
+    if "WWTB_ADMIN_KEY" in by_name:
+        print("==> An admin key is already set; leaving it alone")
+    else:
+        # Generated HERE and never printed. It is written into Portainer, read
+        # back by the scripts that need it, and typed into the app once from
+        # Portainer's own editor -- so it has no reason to pass through a
+        # terminal, a shell history or a transcript.
+        import secrets
+        env.append({"name": "WWTB_ADMIN_KEY", "value": secrets.token_urlsafe(32)})
+        print("==> Generated an admin key (find it in Portainer: Stacks -> whenwillthebus -> Editor)")
 
 if os.environ.get("SET_MEDIA") == "1" and "WWTB_Media__Radarr__Url" not in content:
     # Inserted, not templated over: this file has diverged from the repository's

@@ -60,4 +60,7 @@ public sealed class MonitorOptions
 
     /// <summary>What the household has asked to watch.</summary>
     public string RequestsPath => Path.Combine(DataDirectory, "requests.json");
+
+    /// <summary>Which build the phones are supposed to be running.</summary>
+    public string ReleasePath => Path.Combine(DataDirectory, "release.json");
 }

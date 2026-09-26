@@ -33,7 +33,19 @@ public sealed record ClientIdentity(
     bool Sandbox,
     DateTimeOffset FirstSeen,
     DateTimeOffset LastSeen,
-    int Visits);
+    int Visits)
+{
+    /// <summary>
+    /// The DEVICE's push token, for an ordinary notification.
+    /// </summary>
+    /// <remarks>
+    /// Not an activity's token and not interchangeable with one: this comes
+    /// from registerForRemoteNotifications, addresses the app rather than a
+    /// card, and is sent to the bare bundle-id topic. Null until the phone has
+    /// been asked for notification permission and said yes.
+    /// </remarks>
+    public string? DeviceToken { get; init; }
+}
 
 /// <summary>
 /// Remembers which phones are talking to this worker.
@@ -92,6 +104,11 @@ public sealed class ClientRegistry(ILogger<ClientRegistry> logger)
                 // it is the only thing that knows its own iOS or app version.
                 return existing with
                 {
+                    // Null means "this phone did not say", not "it has none" --
+                    // an older build, or permission not yet granted. Blanking a
+                    // token on a partial hello would silence a phone that is
+                    // perfectly reachable.
+                    DeviceToken = arriving.DeviceToken ?? existing.DeviceToken,
                     Label = arriving.Label ?? existing.Label,
                     Model = arriving.Model ?? existing.Model,
                     SystemVersion = arriving.SystemVersion ?? existing.SystemVersion,
@@ -152,7 +169,10 @@ public sealed class ClientRegistry(ILogger<ClientRegistry> logger)
                     !item.TryGetProperty("sandbox", out JsonElement flag) || flag.GetBoolean(),
                     Instant(item, "firstSeen"),
                     Instant(item, "lastSeen"),
-                    item.TryGetProperty("visits", out JsonElement visits) ? visits.GetInt32() : 1);
+                    item.TryGetProperty("visits", out JsonElement visits) ? visits.GetInt32() : 1)
+                {
+                    DeviceToken = Text(item, "deviceToken"),
+                };
             }
         }
         catch (Exception error) when (error is JsonException or FormatException or KeyNotFoundException)
@@ -185,6 +205,7 @@ public sealed class ClientRegistry(ILogger<ClientRegistry> logger)
                 writer.WriteString("firstSeen", client.FirstSeen.ToString("O", CultureInfo.InvariantCulture));
                 writer.WriteString("lastSeen", client.LastSeen.ToString("O", CultureInfo.InvariantCulture));
                 writer.WriteNumber("visits", client.Visits);
+                Write(writer, "deviceToken", client.DeviceToken);
                 writer.WriteEndObject();
             }
 

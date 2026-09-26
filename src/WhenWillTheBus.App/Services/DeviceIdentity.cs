@@ -137,6 +137,12 @@ public static partial class DeviceIdentity
         Field(json, "appVersion", AppVersion);
         Field(json, "build", Build);
         Field(json, "environment", Environment);
+
+        // Null until notification permission has been granted, and the worker
+        // treats null as "did not say" rather than "has none" -- so a hello
+        // sent before the prompt is answered does not clear a token that
+        // arrived on an earlier run.
+        Field(json, "deviceToken", PushRegistrar.DeviceToken);
         json.Append('}');
         return json.ToString();
     }

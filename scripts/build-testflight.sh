@@ -62,6 +62,36 @@ APPSTORE_ISSUER_ID="${APPSTORE_ISSUER_ID:-513a9d41-1a99-496f-bf7c-41e6712d15cb}"
 # That particular failure is its bundled transporter re-downloading itself and
 # is transient, which is why one retry is worth more here than an error would
 # be -- the second attempt succeeded immediately.
+# Tell the worker which build everybody should now be on, so it can notify the
+# phones that are not.
+#
+# RUN ON THE DOCKER HOST, where the admin key already lives in the container's
+# environment. The alternative is another secret on this Mac, to say something
+# the worker could not otherwise know -- it would have to ask App Store Connect,
+# which would mean putting the .p8 and the issuer id on that box as well.
+#
+# Never fatal. The build is uploaded by this point, and failing here would make
+# a successful release look like a failed one.
+announce() {
+  local build="$1" host="${WWTB_HOST:-192.168.3.151}" user="${WWTB_USER:-scottwolf}"
+
+  echo
+  echo "==> Telling the worker that $build is current"
+
+  if ! ssh -o BatchMode=yes -o ConnectTimeout=10 "$user@$host" \
+      "KEY=\$(sudo docker inspect whenwillthebus --format '{{range .Config.Env}}{{println .}}{{end}}' \
+        | sed -n 's/^WWTB_Api__AdminKey=//p'); \
+       [ -n \"\$KEY\" ] || { echo '    no admin key set on the worker; nobody will be notified'; exit 0; }; \
+       curl -sS -X POST http://localhost:8471/admin/build \
+         -H \"Authorization: Bearer \$KEY\" -H 'Content-Type: application/json' \
+         -d '{\"build\":\"$build\",\"notify\":true}'" 2>&1 | sed 's/^/    /'; then
+    echo "    could not reach the worker; nobody was notified." >&2
+    echo "    the upload is fine -- announce it later with scripts/announce-build.sh $build" >&2
+  fi
+
+  echo
+}
+
 upload() {
   local ipa="$1" attempt output
 
@@ -83,6 +113,7 @@ upload() {
       echo
       echo "Uploaded. App Store Connect processes it for a few minutes before it"
       echo "appears in TestFlight; internal testers need no review."
+      announce "$BUILD_NUMBER"
       return 0
     fi
 
