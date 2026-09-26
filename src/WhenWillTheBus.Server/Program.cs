@@ -104,6 +104,7 @@ builder.Services
 // Radarr and Sonarr are on the LAN and answer quickly or not at all; a long
 // timeout here would only hold a phone's search spinner for half a minute.
 builder.Services.AddHttpClient<ArrClient>(http => http.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddHttpClient<MovieNightClient>(http => http.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddSingleton<RequestLog>();
 
 builder.Services.AddSingleton<DeviceRegistry>();
@@ -731,6 +732,18 @@ app.MapGet("/admin/phones", (ClientRegistry clients, ReleaseTracker releases, Lo
 /// </remarks>
 app.MapGet("/admin/family-key", (IConfiguration configuration) =>
     Results.Ok(new { key = configuration["Api:Key"] }));
+
+/// <summary>What MagicMovieNight suggests putting on tonight.</summary>
+app.MapGet("/admin/tonight", async (MovieNightClient movies, int? take, CancellationToken token) =>
+{
+    TonightBoard board = await movies.TonightAsync(take ?? 5, token);
+    return Results.Ok(new
+    {
+        configured = movies.Configured,
+        board.DecidedAt,
+        picks = board.Picks,
+    });
+});
 
 /// <summary>Send somebody a notification.</summary>
 app.MapPost("/admin/notify", async (

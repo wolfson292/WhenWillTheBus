@@ -74,6 +74,18 @@ echo "    radarr $RADARR_URL  root ${RADARR_ROOT:-<none>}  key ${#RADARR_KEY} ch
 echo "    sonarr $SONARR_URL  root ${SONARR_ROOT:-<none>}  key ${#SONARR_KEY} chars"
 echo "    quality profile $PROFILE for both"
 
+# MagicMovieNight, if it is running on the same host. Looked for rather than
+# configured: it is optional, and an address for something that is not there
+# would only produce a section that never loads.
+MOVIENIGHT_URL=""
+if "${SSH[@]}" "sudo docker ps --format '{{.Names}}' | grep -qx magicmovienight" 2>/dev/null; then
+  MOVIENIGHT_URL="http://$HOST:8100"
+  echo "    movies $MOVIENIGHT_URL"
+else
+  echo "    movies not running; the admin screen's tonight section stays off"
+fi
+
+export MOVIENIGHT_URL
 export RADARR_URL RADARR_KEY RADARR_ROOT SONARR_URL SONARR_KEY SONARR_ROOT PROFILE STACK_NAME
 "$ROOT/scripts/portainer-redeploy.sh" --set-media
 

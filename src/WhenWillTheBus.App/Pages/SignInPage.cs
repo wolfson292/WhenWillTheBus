@@ -28,14 +28,6 @@ public sealed class SignInPage : ContentPage
     private readonly Entry _deviceLabel = new() { Placeholder = "This phone's name, e.g. Angela's iPhone" };
     private readonly Label _status = new() { FontSize = 13, TextColor = Theme.TextDim };
 
-    /// <summary>Where a phone is sent to install an update.</summary>
-    /// <remarks>
-    /// A notification cannot open another app; it opens this one, which opens
-    /// this. itms-beta:// is TestFlight's own scheme, and the number is the App
-    /// Store Connect app id.
-    /// </remarks>
-    private const string TestFlightUrl = "itms-beta://beta.itunes.apple.com/v1/app/6814865915";
-
     // Hidden unless the worker says this key is an admin one. Not merely
     // disabled: offering a control that always refuses is worse than not
     // offering it at all.
@@ -51,19 +43,23 @@ public sealed class SignInPage : ContentPage
 
     private readonly Label _adminNote = new()
     {
-        Text = "Every phone that has opened the app. Nudge one to remind them to update.",
+        Text = "Registered phones, notifications, and what to watch tonight.",
         FontSize = 12,
         TextColor = Theme.TextDim,
         IsVisible = false,
     };
 
-    private readonly VerticalStackLayout _phones = new() { Spacing = 8, IsVisible = false };
+    private readonly Button _adminButton = new() { Text = "Open admin", FontSize = 14, IsVisible = false };
 
     public SignInPage(CredentialStore credentials, ServerLink server, BusService bus)
     {
         _credentials = credentials;
         _server = server;
         _bus = bus;
+
+        _adminButton.Clicked += (_, _) =>
+            Navigation.PushAsync(new AdminPage(_server)).FireAndForget();
+
 
         Title = "Settings";
         Padding = new Thickness(20, 16);
@@ -95,7 +91,7 @@ public sealed class SignInPage : ContentPage
 
                     _adminHeading,
                     _adminNote,
-                    _phones,
+                    _adminButton,
 
                     Heading("This phone"),
                     Note("A name for the worker's status page, so its list of connected phones "
@@ -162,96 +158,7 @@ public sealed class SignInPage : ContentPage
             _status.Text = "An update is waiting in TestFlight.";
         }
 
-        _adminHeading.IsVisible = _adminNote.IsVisible = _phones.IsVisible = role.IsAdmin;
-        if (!role.IsAdmin)
-        {
-            return;
-        }
-
-        _phones.Clear();
-        foreach (FamilyPhone phone in await _server.PhonesAsync())
-        {
-            _phones.Add(PhoneRow(phone));
-        }
-    }
-
-    private View PhoneRow(FamilyPhone phone)
-    {
-        Label detail = new()
-        {
-            Text = Describe(phone),
-            FontSize = 11,
-            TextColor = phone.UpdateAvailable ? Theme.Bus : Theme.TextDim,
-        };
-
-        Button nudge = new()
-        {
-            Text = phone.UpdateAvailable ? "Remind" : "Nudge",
-            FontSize = 12,
-            Padding = new Thickness(10, 4),
-
-            // Disabled rather than hidden, with the reason in the line above:
-            // a phone that has refused notifications is a fact worth seeing.
-            IsEnabled = phone.Reachable,
-        };
-
-        nudge.Clicked += async (_, _) =>
-        {
-            nudge.IsEnabled = false;
-            nudge.Text = "Sending…";
-
-            (string title, string body) = phone.UpdateAvailable
-                ? ("Update available", "A new version of Wolf Family is ready in TestFlight.")
-                : ("Wolf Family", "Open the app when you get a moment.");
-
-            // Somewhere to go only when there IS somewhere to go. A plain nudge
-            // that dropped somebody into TestFlight for no reason would be
-            // worse than no nudge.
-            string? openUrl = phone.UpdateAvailable ? TestFlightUrl : null;
-
-            detail.Text = await _server.NudgeAsync(phone.Id, title, body, openUrl);
-            nudge.Text = phone.UpdateAvailable ? "Remind" : "Nudge";
-            nudge.IsEnabled = phone.Reachable;
-        };
-
-        Grid row = new()
-        {
-            ColumnDefinitions = [new ColumnDefinition(GridLength.Star), new ColumnDefinition(GridLength.Auto)],
-            ColumnSpacing = 8,
-        };
-
-        row.Add(new VerticalStackLayout
-        {
-            Spacing = 0,
-            Children =
-            {
-                new Label { Text = phone.Label ?? "unnamed", FontSize = 14, TextColor = Theme.Text },
-                detail,
-            },
-        }, 0);
-        row.Add(nudge, 1);
-        return row;
-    }
-
-    private static string Describe(FamilyPhone phone)
-    {
-        List<string> parts = [phone.Model ?? "unknown model", phone.Sandbox ? "development" : "TestFlight"];
-
-        if (phone.UpdateAvailable)
-        {
-            parts.Add($"on {phone.Build} — update waiting");
-        }
-        else if (phone.Build is string build)
-        {
-            parts.Add($"on {build}");
-        }
-
-        if (!phone.Reachable)
-        {
-            parts.Add("notifications not allowed");
-        }
-
-        return string.Join(" · ", parts);
+        _adminHeading.IsVisible = _adminNote.IsVisible = _adminButton.IsVisible = role.IsAdmin;
     }
 
     private async void OnSaveLabel(object? sender, EventArgs e)

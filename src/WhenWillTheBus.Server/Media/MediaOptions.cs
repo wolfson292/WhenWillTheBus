@@ -54,4 +54,13 @@ public sealed class MediaOptions
 
     /// <summary>How many past requests to keep for the page and the app's list.</summary>
     public int HistoryLimit { get; set; } = 200;
+
+    /// <summary>
+    /// MagicMovieNight, if it is running: e.g. http://192.168.3.151:8100
+    /// </summary>
+    /// <remarks>
+    /// Blank turns the feature off rather than producing errors. Nothing else
+    /// depends on it being reachable.
+    /// </remarks>
+    public string? MovieNightUrl { get; set; }
 }

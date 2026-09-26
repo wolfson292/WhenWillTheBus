@@ -9,6 +9,17 @@ namespace WhenWillTheBus.App.Services;
 /// <summary>What the worker says this phone may do.</summary>
 public sealed record WorkerRole(bool IsAdmin, bool UpdateAvailable, string? LatestBuild);
 
+/// <summary>One thing MagicMovieNight suggests putting on.</summary>
+public sealed record TonightPick(
+    int Rank,
+    string Title,
+    int? Year,
+    string Kind,
+    string? Pitch,
+    string? WhereToWatch,
+    string? PosterUrl,
+    bool InLibrary);
+
 /// <summary>Another phone in the household, as an admin sees it.</summary>
 public sealed record FamilyPhone(
     string Id,
@@ -223,6 +234,40 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
             }
 
             return phones;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return [];
+        }
+    }
+
+    /// <summary>What to watch tonight, from MagicMovieNight. Empty when it has nothing to say.</summary>
+    public async Task<IReadOnlyList<TonightPick>> TonightAsync(CancellationToken cancellationToken = default)
+    {
+        string? body = await ReadAsync("/admin/tonight", cancellationToken);
+        if (body is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(body);
+            List<TonightPick> picks = [];
+            foreach (System.Text.Json.JsonElement pick in document.RootElement.Array("picks"))
+            {
+                picks.Add(new TonightPick(
+                    (int)(pick.Long("rank") ?? 0),
+                    pick.String("title") ?? "(untitled)",
+                    (int?)pick.Long("year"),
+                    pick.String("kind") ?? "Movie",
+                    pick.String("pitch"),
+                    pick.String("whereToWatch"),
+                    pick.String("posterUrl"),
+                    pick.Bool("inLibrary")));
+            }
+
+            return picks;
         }
         catch (System.Text.Json.JsonException)
         {

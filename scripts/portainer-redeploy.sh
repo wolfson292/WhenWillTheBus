@@ -107,6 +107,12 @@ import json, os, sys, urllib.request, urllib.error
 # into the compose file; only what the file then passes to the service reaches
 # the process. Setting them alone left the worker with no media configuration
 # at all and nothing anywhere saying why, so the file is edited to match.
+MOVIES_BLOCK = """
+      # MagicMovieNight, for the admin screen's "what to watch tonight".
+      # Blank turns the section off; nothing else depends on it.
+      WWTB_Media__MovieNightUrl: ${MOVIENIGHT_URL}
+"""
+
 ADMIN_BLOCK = """
       # A SECOND key, for the one phone allowed to see the others and send them
       # notifications. Unset means nobody can, which is the right default.
@@ -192,6 +198,12 @@ if os.environ.get("SET_ADMIN") == "1":
         env.append({"name": "WWTB_ADMIN_KEY", "value": secrets.token_urlsafe(32)})
         print("==> Generated an admin key (find it in Portainer: Stacks -> whenwillthebus -> Editor)")
 
+if os.environ.get("SET_MEDIA") == "1" and "WWTB_Media__MovieNightUrl" not in content:
+    marker = "      Logging__LogLevel__Default:"
+    if marker in content:
+        content = content.replace(marker, MOVIES_BLOCK.rstrip() + "\n\n" + marker, 1)
+        print("==> Adding MagicMovieNight to the stack file")
+
 if os.environ.get("SET_MEDIA") == "1" and "WWTB_Media__Radarr__Url" not in content:
     # Inserted, not templated over: this file has diverged from the repository's
     # on purpose -- real ports, the SWAG network, pull_policy -- and writing the
@@ -213,6 +225,7 @@ if os.environ.get("SET_MEDIA") == "1":
         "SONARR_API_KEY": os.environ["SONARR_KEY"],
         "SONARR_ROOT": os.environ.get("SONARR_ROOT", ""),
         "SONARR_PROFILE": os.environ["PROFILE"],
+        "MOVIENIGHT_URL": os.environ.get("MOVIENIGHT_URL", ""),
     }
 
     # Anything not named here keeps the value the server already has, which is
