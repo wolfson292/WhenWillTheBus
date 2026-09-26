@@ -6,14 +6,15 @@
 # the only way to actually see the card.
 #
 # Usage:
-#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-device.sh [--install]
+#   [DEVELOPMENT_TEAM=XXXXXXXXXX] scripts/build-device.sh [--install]
 #
-# Find your team id with:  scripts/team-id.sh
+# DEVELOPMENT_TEAM defaults to the one in Directory.Build.props, which is the
+# only place it is written down. Find yours with scripts/team-id.sh.
 
 set -euo pipefail
 
 # --help, and rejecting arguments rather than ignoring them.
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 wwtb_help "${BASH_SOURCE[0]}" "$@"
 
 INSTALL=0
@@ -26,10 +27,7 @@ done
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-if [ -z "${DEVELOPMENT_TEAM:-}" ]; then
-  echo "error: DEVELOPMENT_TEAM is not set. Run scripts/team-id.sh to find it." >&2
-  exit 1
-fi
+wwtb_team
 
 BUNDLE_ID=$(sed -n 's/.*<ApplicationId[^>]*>\([^<]*\)<.*/\1/p' Directory.Build.props | head -1)
 

@@ -19,5 +19,24 @@
       scripts/print-config.sh, which reads this file).
     -->
     <ApplicationId Condition="'$(ApplicationId)' == ''">com.denlair.whenwillthebus</ApplicationId>
+
+    <!--
+      THE Apple Developer Team ID, used to sign everything.
+
+      Here rather than in each script for the same reason as the bundle id: it
+      appeared in four of them, and four copies of a value is three chances to
+      change only some of them.
+
+      NOT A SECRET. It is in every provisioning profile, in the signature of
+      every build, and readable from any installed app. What it identifies is
+      the team, not an account, and it authorises nothing on its own.
+
+      The scripts take DEVELOPMENT_TEAM from the environment first and fall
+      back to this, announcing which they used, so that a clone of this repository
+      on somebody else's Mac is told whose team it is about to try to sign
+      with, rather than failing later with a certificate error that does not
+      mention it. Find your own with scripts/team-id.sh.
+    -->
+    <DevelopmentTeam Condition="'$(DevelopmentTeam)' == ''">7NFHX4U9ME</DevelopmentTeam>
   </PropertyGroup>
 </Project>

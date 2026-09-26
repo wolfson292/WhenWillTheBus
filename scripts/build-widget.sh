@@ -19,7 +19,7 @@
 set -euo pipefail
 
 # --help, and rejecting arguments rather than ignoring them.
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 wwtb_help "${BASH_SOURCE[0]}" "$@"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -49,10 +49,7 @@ export WWTB_BUILD="${WWTB_BUILD:-1}"
 if [ "$DESTINATION" = "device" ]; then
   SDK="iphoneos"
   RID="ios-arm64"
-  if [ -z "${DEVELOPMENT_TEAM:-}" ]; then
-    echo "error: a device build must be signed. Set DEVELOPMENT_TEAM=XXXXXXXXXX." >&2
-    exit 1
-  fi
+  wwtb_team
   SIGNING=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES)
   export WWTB_TEAM="$DEVELOPMENT_TEAM"
 

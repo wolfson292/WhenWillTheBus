@@ -11,7 +11,7 @@
 #
 # This REGISTERS THE DEVICE and CREATES APP IDs in your Apple Developer account.
 #
-# Usage:  DEVELOPMENT_TEAM=XXXXXXXXXX scripts/provision.sh [--distribution]
+# Usage:  [DEVELOPMENT_TEAM=XXXXXXXXXX] scripts/provision.sh [--distribution]
 #
 # --distribution mints the APP STORE profiles a TestFlight build needs instead
 # of the development ones. They are a different kind of profile, not a variant:
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 # --help, and rejecting arguments rather than ignoring them.
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 wwtb_help "${BASH_SOURCE[0]}" "$@"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -35,7 +35,7 @@ for argument in "$@"; do
   esac
 done
 
-[ -n "${DEVELOPMENT_TEAM:-}" ] || { echo "error: DEVELOPMENT_TEAM is not set. Run scripts/team-id.sh." >&2; exit 1; }
+wwtb_team
 
 # An App Store profile cannot be minted without a distribution certificate, and
 # the failure it produces names neither. Checked up front, because the archive

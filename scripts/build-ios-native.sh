@@ -15,7 +15,7 @@
 set -euo pipefail
 
 # --help, and rejecting arguments rather than ignoring them.
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 wwtb_help "${BASH_SOURCE[0]}" "$@"
 
 # Takes no arguments. Accepting one silently would mean typing something

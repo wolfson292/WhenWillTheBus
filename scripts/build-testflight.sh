@@ -13,9 +13,9 @@
 # touching APNS_SANDBOX.
 #
 # Usage:
-#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh                 # build only
-#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh --upload        # build, then upload
-#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh --upload-only   # upload what is built
+#   [DEVELOPMENT_TEAM=XXXXXXXXXX] scripts/build-testflight.sh                 # build only
+#   [DEVELOPMENT_TEAM=XXXXXXXXXX] scripts/build-testflight.sh --upload        # build, then upload
+#   [DEVELOPMENT_TEAM=XXXXXXXXXX] scripts/build-testflight.sh --upload-only   # upload what is built
 #
 # --upload-only exists because the two halves cost wildly different amounts and
 # it is the cheap one that fails: rebuilding forty minutes of AOT to retry a
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 # --help, and rejecting arguments rather than ignoring them.
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 wwtb_help "${BASH_SOURCE[0]}" "$@"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -40,7 +40,7 @@ case "${1:-}" in
   *) wwtb_unknown "${BASH_SOURCE[0]}" "$1" ;;
 esac
 
-[ -n "${DEVELOPMENT_TEAM:-}" ] || { echo "error: DEVELOPMENT_TEAM is not set. Run scripts/team-id.sh." >&2; exit 1; }
+wwtb_team
 
 # NEITHER OF THESE IS A SECRET. They name which key to use; the key itself is
 # the .p8, which lives in keys/ (gitignored) and at
