@@ -11,6 +11,15 @@
 
 set -euo pipefail
 
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
+
+# Takes a path to the .p8. Anything flag-shaped is a mistake, not a filename.
+case "${1:-}" in
+  -*) wwtb_unknown "${BASH_SOURCE[0]}" "$1" ;;
+esac
+
 KEY="${1:-}"
 HOST="${WWTB_HOST:-192.168.3.151}"
 USER="${WWTB_USER:-scottwolf}"

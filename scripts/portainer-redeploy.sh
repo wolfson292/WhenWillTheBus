@@ -28,11 +28,19 @@
 
 set -euo pipefail
 
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
+
 SET_MEDIA=0
 if [ "${1:-}" = "--set-media" ]; then
   SET_MEDIA=1
   shift
 fi
+
+case "${1:-}" in
+  -*) wwtb_unknown "${BASH_SOURCE[0]}" "$1" ;;
+esac
 
 STACK_NAME="${STACK_NAME:-${1:-whenwillthebus}}"
 

@@ -19,11 +19,20 @@
 # Override the target with WWTB_HOST / WWTB_USER / WWTB_ROOT.
 
 set -euo pipefail
+
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 REDEPLOY=0
-[ "${1:-}" = "--redeploy" ] && REDEPLOY=1
+for argument in "$@"; do
+  case "$argument" in
+    --redeploy) REDEPLOY=1 ;;
+    *) wwtb_unknown "${BASH_SOURCE[0]}" "$argument" ;;
+  esac
+done
 
 HOST="${WWTB_HOST:-192.168.3.151}"
 USER="${WWTB_USER:-scottwolf}"

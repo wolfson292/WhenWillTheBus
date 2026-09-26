@@ -8,8 +8,19 @@
 # in a widget extension, and driving ActivityKit from C# needs these @_cdecl
 # entry points. This script produces the xcframework the .csproj picks up; the
 # widget extension itself is built by Xcode (see docs/ios-build.md).
+#
+# Usage:
+#   scripts/build-ios-native.sh
 
 set -euo pipefail
+
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
+
+# Takes no arguments. Accepting one silently would mean typing something
+# meaningful and having it ignored.
+[ $# -eq 0 ] || wwtb_unknown "${BASH_SOURCE[0]}" "$1"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD="$ROOT/ios/build"

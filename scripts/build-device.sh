@@ -11,6 +11,18 @@
 # Find your team id with:  scripts/team-id.sh
 
 set -euo pipefail
+
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
+
+INSTALL=0
+for argument in "$@"; do
+  case "$argument" in
+    --install) INSTALL=1 ;;
+    -*) wwtb_unknown "${BASH_SOURCE[0]}" "$argument" ;;
+  esac
+done
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -67,7 +79,7 @@ echo "    aps-environment $APS"
 echo "    live activities $LIVE"
 [ "$LIVE" = "true" ] || { echo "error: NSSupportsLiveActivities is not set; the card will never start" >&2; exit 1; }
 
-if [ "${1:-}" = "--install" ]; then
+if [ "$INSTALL" = "1" ]; then
   # Read the JSON, not the text table.
   #
   # devicectl's human-readable table shifts its columns with the longest device

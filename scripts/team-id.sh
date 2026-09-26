@@ -3,8 +3,19 @@
 #
 # Finds the Apple Developer Team ID from the signing certificates on this Mac.
 # Sign Xcode into your account first (Xcode > Settings > Accounts).
+#
+# Usage:
+#   scripts/team-id.sh
 
 set -euo pipefail
+
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
+
+# Takes no arguments. Accepting one silently would mean typing something
+# meaningful and having it ignored.
+[ $# -eq 0 ] || wwtb_unknown "${BASH_SOURCE[0]}" "$1"
 
 # The Team ID is the OU field of the certificate subject, NOT the ten-character
 # string in the common name. Those look alike and are different values:

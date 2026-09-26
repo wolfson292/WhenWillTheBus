@@ -14,6 +14,10 @@
 #   scripts/configure-media.sh [--profile N] [--redeploy]
 
 set -euo pipefail
+
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
@@ -30,7 +34,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --profile) PROFILE="$2"; shift 2 ;;
     --redeploy) REDEPLOY=1; shift ;;
-    *) echo "unknown argument: $1" >&2; exit 1 ;;
+    *) wwtb_unknown "${BASH_SOURCE[0]}" "$1" ;;
   esac
 done
 

@@ -18,9 +18,21 @@
 
 set -euo pipefail
 
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DESTINATION="${1:-simulator}"
 HOST_CONFIG="${2:-Debug}"
+
+# Positional, and only two values are meaningful. "iphone" or "Device" used to
+# fall through to a simulator build that then failed to install, on an error
+# about the wrong architecture.
+case "$DESTINATION" in
+  simulator | device) ;;
+  *) wwtb_unknown "${BASH_SOURCE[0]}" "$DESTINATION" ;;
+esac
 
 # One source of truth, so the app, the extension and the worker's APNs topic
 # cannot drift apart. See Directory.Build.props.

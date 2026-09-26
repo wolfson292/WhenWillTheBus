@@ -20,11 +20,20 @@
 # device and archiving therefore mint different things from the same stub.
 
 set -euo pipefail
+
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 DISTRIBUTION=0
-[ "${1:-}" = "--distribution" ] && DISTRIBUTION=1
+for argument in "$@"; do
+  case "$argument" in
+    --distribution) DISTRIBUTION=1 ;;
+    *) wwtb_unknown "${BASH_SOURCE[0]}" "$argument" ;;
+  esac
+done
 
 [ -n "${DEVELOPMENT_TEAM:-}" ] || { echo "error: DEVELOPMENT_TEAM is not set. Run scripts/team-id.sh." >&2; exit 1; }
 

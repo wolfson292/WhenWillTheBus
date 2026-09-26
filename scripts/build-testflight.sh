@@ -13,24 +13,31 @@
 # touching APNS_SANDBOX.
 #
 # Usage:
-#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh
+#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh                 # build only
+#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh --upload        # build, then upload
+#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh --upload-only   # upload what is built
 #
-# Pass --upload to send it to App Store Connect when it passes verification.
-#
-# Usage:
-#   DEVELOPMENT_TEAM=XXXXXXXXXX scripts/build-testflight.sh [--upload]
+# --upload-only exists because the two halves cost wildly different amounts and
+# it is the cheap one that fails: rebuilding forty minutes of AOT to retry a
+# ninety-second transfer is the wrong shape.
 
 set -euo pipefail
+
+# --help, and rejecting arguments rather than ignoring them.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_help.sh"
+wwtb_help "${BASH_SOURCE[0]}" "$@"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 UPLOAD=0
 ONLY_UPLOAD=0
 case "${1:-}" in
+  "") ;;
   --upload) UPLOAD=1 ;;
   # Uploading is the cheap half and the half that fails. Rebuilding forty
   # minutes of AOT to retry a ninety-second transfer is the wrong shape.
   --upload-only) UPLOAD=1; ONLY_UPLOAD=1 ;;
+  *) wwtb_unknown "${BASH_SOURCE[0]}" "$1" ;;
 esac
 
 [ -n "${DEVELOPMENT_TEAM:-}" ] || { echo "error: DEVELOPMENT_TEAM is not set. Run scripts/team-id.sh." >&2; exit 1; }
