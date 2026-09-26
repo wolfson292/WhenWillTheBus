@@ -19,6 +19,7 @@ public sealed class SignInPage : ContentPage
 {
     private readonly CredentialStore _credentials;
     private readonly ServerLink _server;
+    private readonly MediaClient _media;
     private readonly BusService _bus;
 
     private readonly Entry _email = new() { Placeholder = "Email", Keyboard = Keyboard.Email };
@@ -51,14 +52,15 @@ public sealed class SignInPage : ContentPage
 
     private readonly Button _adminButton = new() { Text = "Open admin", FontSize = 14, IsVisible = false };
 
-    public SignInPage(CredentialStore credentials, ServerLink server, BusService bus)
+    public SignInPage(CredentialStore credentials, ServerLink server, MediaClient media, BusService bus)
     {
+        _media = media;
         _credentials = credentials;
         _server = server;
         _bus = bus;
 
         _adminButton.Clicked += (_, _) =>
-            Navigation.PushAsync(new AdminPage(_server)).FireAndForget();
+            Navigation.PushAsync(new AdminPage(_server, _media)).FireAndForget();
 
 
         Title = "Settings";

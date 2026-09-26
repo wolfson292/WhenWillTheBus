@@ -17,10 +17,18 @@ public sealed record TonightPick(
     string? WhereToWatch,
     string? PosterUrl,
     bool InLibrary,
-    int? Confidence);
+    int? Confidence,
+
+    // The identifiers Radarr and Sonarr key on, carried so a pick that is NOT
+    // in the library can be asked for without searching for it again by name --
+    // which would risk requesting a different film with the same title.
+    long? TmdbId,
+    long? TvdbId,
+    int? RuntimeMinutes);
 
 /// <summary>What was suggested, and when it was worked out.</summary>
-public sealed record TonightBoard(DateTimeOffset? DecidedAt, IReadOnlyList<TonightPick> Picks);
+public sealed record TonightBoard(
+    DateTimeOffset? DecidedAt, IReadOnlyList<TonightPick> Picks, string? Error = null);
 
 /// <summary>
 /// Reads tonight's picks from MagicMovieNight.
@@ -42,6 +50,59 @@ public sealed class MovieNightClient(
 
     public bool Configured => !string.IsNullOrWhiteSpace(_options.MovieNightUrl);
 
+    /// <summary>
+    /// Ask for a fresh suggestion, in words.
+    /// </summary>
+    /// <remarks>
+    /// SLOW AND NOT FREE on the other side: it pools candidates and asks
+    /// Claude, which takes tens of seconds and spends tokens. Hence a long
+    /// timeout of its own rather than the client's, and hence nothing calls
+    /// this on a timer.
+    /// </remarks>
+    public async Task<TonightBoard> SuggestAsync(
+        string? prompt, string? kind, int count = 5, CancellationToken token = default)
+    {
+        if (!Configured)
+        {
+            return new TonightBoard(null, [], "MagicMovieNight is not configured on the worker.");
+        }
+
+        string body = JsonSerializer.Serialize(new { prompt, kind, count });
+
+        try
+        {
+            using HttpRequestMessage request = new(
+                HttpMethod.Post, $"{_options.MovieNightUrl!.TrimEnd('/')}/api/suggest")
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+            };
+
+            // Its own budget. The shared client's fifteen seconds is right for
+            // reading the last answer and nowhere near enough to make a new one.
+            using CancellationTokenSource slower = CancellationTokenSource.CreateLinkedTokenSource(token);
+            slower.CancelAfter(TimeSpan.FromMinutes(3));
+
+            using HttpResponseMessage response = await http
+                .SendAsync(request, slower.Token).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return new TonightBoard(null, [], $"MagicMovieNight answered {(int)response.StatusCode}.");
+            }
+
+            return Read(await response.Content.ReadAsStringAsync(slower.Token).ConfigureAwait(false));
+        }
+        catch (OperationCanceledException) when (!token.IsCancellationRequested)
+        {
+            return new TonightBoard(null, [], "It took too long to come back with anything.");
+        }
+        catch (Exception error) when (error is HttpRequestException or JsonException)
+        {
+            logger.LogInformation(error, "Could not ask for a suggestion");
+            return new TonightBoard(null, [], "Could not reach MagicMovieNight.");
+        }
+    }
+
     public async Task<TonightBoard> TonightAsync(int take = 5, CancellationToken token = default)
     {
         if (!Configured)
@@ -53,7 +114,12 @@ public sealed class MovieNightClient(
 
         try
         {
-            using HttpResponseMessage response = await http.GetAsync(url, token).ConfigureAwait(false);
+            // Reading the last answer is a database query on the other side and
+            // should be quick or not at all.
+            using CancellationTokenSource quick = CancellationTokenSource.CreateLinkedTokenSource(token);
+            quick.CancelAfter(TimeSpan.FromSeconds(10));
+
+            using HttpResponseMessage response = await http.GetAsync(url, quick.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 // A 404 is the ordinary case while that app is on an older
@@ -63,9 +129,25 @@ public sealed class MovieNightClient(
                 return new TonightBoard(null, []);
             }
 
-            using JsonDocument document = JsonDocument.Parse(
-                await response.Content.ReadAsStringAsync(token).ConfigureAwait(false));
+            return Read(await response.Content.ReadAsStringAsync(quick.Token).ConfigureAwait(false));
+        }
+        catch (Exception error) when (error is HttpRequestException or OperationCanceledException or JsonException)
+        {
+            logger.LogInformation(error, "Could not read tonight's picks");
+            return new TonightBoard(null, []);
+        }
+    }
 
+    private static TonightBoard Read(string body)
+    {
+        using JsonDocument document = JsonDocument.Parse(body);
+
+        if (document.RootElement.String("error") is string refused)
+        {
+            return new TonightBoard(null, [], refused);
+        }
+
+        {
             DateTimeOffset? decided = null;
             if (document.RootElement.TryGetProperty("run", out JsonElement run)
                 && run.ValueKind == JsonValueKind.Object
@@ -87,15 +169,13 @@ public sealed class MovieNightClient(
                     pick.String("whereToWatch"),
                     pick.String("posterUrl"),
                     pick.Bool("inLibrary"),
-                    (int?)pick.Long("confidence")));
+                    (int?)pick.Long("confidence"),
+                    pick.Long("tmdbId"),
+                    pick.Long("tvdbId"),
+                    (int?)pick.Long("runtimeMinutes")));
             }
 
             return new TonightBoard(decided, picks);
-        }
-        catch (Exception error) when (error is HttpRequestException or TaskCanceledException or JsonException)
-        {
-            logger.LogInformation(error, "Could not read tonight's picks");
-            return new TonightBoard(null, []);
         }
     }
 }

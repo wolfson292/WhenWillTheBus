@@ -18,7 +18,28 @@ public sealed record TonightPick(
     string? Pitch,
     string? WhereToWatch,
     string? PosterUrl,
-    bool InLibrary);
+    bool InLibrary,
+    long? TmdbId,
+    long? TvdbId,
+    int? RuntimeMinutes)
+{
+    public bool IsSeries => Kind.Equals("show", StringComparison.OrdinalIgnoreCase)
+        || Kind.Equals("series", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The identifier the matching Arr keys on, or null if it is unknown.</summary>
+    /// <remarks>
+    /// Radarr keys films on TMDB and Sonarr keys series on TVDB. A pick that
+    /// carries neither cannot be asked for by identifier, and searching again
+    /// by title would risk requesting a different thing with the same name.
+    /// </remarks>
+    public long? RequestId => IsSeries ? TvdbId : TmdbId;
+
+    /// <summary>What the app can offer to do about it.</summary>
+    public bool CanRequest => !InLibrary && RequestId is not null;
+}
+
+/// <summary>A set of suggestions, or why there are none.</summary>
+public sealed record TonightBoard(IReadOnlyList<TonightPick> Picks, string? Error);
 
 /// <summary>Another phone in the household, as an admin sees it.</summary>
 public sealed record FamilyPhone(
@@ -241,13 +262,65 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
         }
     }
 
-    /// <summary>What to watch tonight, from MagicMovieNight. Empty when it has nothing to say.</summary>
-    public async Task<IReadOnlyList<TonightPick>> TonightAsync(CancellationToken cancellationToken = default)
+    /// <summary>The last set of picks, from MagicMovieNight.</summary>
+    public async Task<TonightBoard> TonightAsync(CancellationToken cancellationToken = default) =>
+        Board(await ReadAsync("/admin/tonight", cancellationToken));
+
+    /// <summary>
+    /// Ask for a fresh set, in words.
+    /// </summary>
+    /// <remarks>
+    /// Takes tens of seconds and spends tokens on the other side, so this is
+    /// something a person presses rather than anything that happens on its own.
+    /// </remarks>
+    public async Task<TonightBoard> SuggestAsync(
+        string? prompt, string? kind, CancellationToken cancellationToken = default)
     {
-        string? body = await ReadAsync("/admin/tonight", cancellationToken);
+        (string Url, string Key)? server = await credentials.ReadServerAsync();
+        if (server is null)
+        {
+            return new TonightBoard([], "No worker is configured.");
+        }
+
+        string payload = System.Text.Json.JsonSerializer.Serialize(new { prompt, kind, count = 5 });
+
+        try
+        {
+            using HttpRequestMessage request = new(HttpMethod.Post, $"{server.Value.Url}/admin/suggest")
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json"),
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", server.Value.Key);
+
+            // Its own patience. Making a suggestion is slower than anything
+            // else this app asks for, by a wide margin.
+            using CancellationTokenSource slower =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            slower.CancelAfter(TimeSpan.FromMinutes(3));
+
+            using HttpResponseMessage response = await http.SendAsync(request, slower.Token);
+            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+            {
+                return new TonightBoard([], "This phone is not an admin.");
+            }
+
+            return Board(await response.Content.ReadAsStringAsync(slower.Token));
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new TonightBoard([], "It took too long to come back with anything.");
+        }
+        catch (HttpRequestException)
+        {
+            return new TonightBoard([], "Could not reach the worker.");
+        }
+    }
+
+    private static TonightBoard Board(string? body)
+    {
         if (body is null)
         {
-            return [];
+            return new TonightBoard([], "Could not reach the worker.");
         }
 
         try
@@ -264,14 +337,17 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
                     pick.String("pitch"),
                     pick.String("whereToWatch"),
                     pick.String("posterUrl"),
-                    pick.Bool("inLibrary")));
+                    pick.Bool("inLibrary"),
+                    pick.Long("tmdbId"),
+                    pick.Long("tvdbId"),
+                    (int?)pick.Long("runtimeMinutes")));
             }
 
-            return picks;
+            return new TonightBoard(picks, document.RootElement.String("error"));
         }
         catch (System.Text.Json.JsonException)
         {
-            return [];
+            return new TonightBoard([], "The worker sent something unreadable.");
         }
     }
 

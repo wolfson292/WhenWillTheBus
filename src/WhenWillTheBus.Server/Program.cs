@@ -104,7 +104,12 @@ builder.Services
 // Radarr and Sonarr are on the LAN and answer quickly or not at all; a long
 // timeout here would only hold a phone's search spinner for half a minute.
 builder.Services.AddHttpClient<ArrClient>(http => http.Timeout = TimeSpan.FromSeconds(15));
-builder.Services.AddHttpClient<MovieNightClient>(http => http.Timeout = TimeSpan.FromSeconds(10));
+// NO CLIENT-WIDE TIMEOUT. HttpClient.Timeout applies on top of any token you
+// pass and cancels first, so a ten-second client silently capped the
+// three-minute budget a suggestion needs -- and presented as "it took too long"
+// after exactly ten seconds. The two calls want wildly different patience, so
+// each sets its own.
+builder.Services.AddHttpClient<MovieNightClient>(http => http.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddSingleton<RequestLog>();
 
 builder.Services.AddSingleton<DeviceRegistry>();
@@ -741,8 +746,26 @@ app.MapGet("/admin/tonight", async (MovieNightClient movies, int? take, Cancella
     {
         configured = movies.Configured,
         board.DecidedAt,
+        board.Error,
         picks = board.Picks,
     });
+});
+
+/// <summary>
+/// Ask MagicMovieNight for a fresh suggestion, in words.
+/// </summary>
+/// <remarks>
+/// Admin-only not because the answer is sensitive but because making one
+/// SPENDS MONEY and takes tens of seconds, and a button anybody could hold down
+/// is a bill anybody could run up.
+/// </remarks>
+app.MapPost("/admin/suggest", async (
+    SuggestAsk ask,
+    MovieNightClient movies,
+    CancellationToken token) =>
+{
+    TonightBoard board = await movies.SuggestAsync(ask.Prompt, ask.Kind, ask.Count ?? 5, token);
+    return Results.Ok(new { board.Error, board.DecidedAt, picks = board.Picks });
 });
 
 /// <summary>Send somebody a notification.</summary>
@@ -935,6 +958,9 @@ internal static partial class Program
 {
     public const string TestFlight = "itms-beta://beta.itunes.apple.com/v1/app/6814865915";
 }
+
+/// <summary>A suggestion asked for in words.</summary>
+internal sealed record SuggestAsk(string? Prompt, string? Kind, int? Count);
 
 /// <summary>A notification an admin is sending by hand.</summary>
 internal sealed record AdminNotice(string ClientId, string? Title, string? Body, string? OpenUrl);
