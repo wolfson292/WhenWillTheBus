@@ -27,10 +27,12 @@ public static class MauiProgram
 
         builder.Services.AddSingleton<CredentialStore>();
         builder.Services.AddSingleton<ServerLink>();
+        builder.Services.AddSingleton<MediaClient>();
         builder.Services.AddSingleton<BusService>();
         builder.Services.AddTransient<BusPage>();
         builder.Services.AddTransient<MapPage>();
         builder.Services.AddTransient<ScansPage>();
+        builder.Services.AddTransient<WatchPage>();
         builder.Services.AddTransient<HistoryPage>();
         builder.Services.AddTransient<SignInPage>();
 

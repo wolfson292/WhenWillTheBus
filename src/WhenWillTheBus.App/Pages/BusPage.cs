@@ -28,6 +28,9 @@ public sealed class BusPage : ContentPage
     private readonly BusService _bus;
     private readonly IServiceProvider _services;
 
+    private int _taps;
+    private DateTimeOffset _lastTap = DateTimeOffset.MinValue;
+
     private readonly Label _rider = new()
     {
         FontSize = 17,
@@ -80,6 +83,10 @@ public sealed class BusPage : ContentPage
     {
         _bus = bus;
         _services = services;
+
+        TapGestureRecognizer secret = new();
+        secret.Tapped += (_, _) => SecretTap();
+        _rider.GestureRecognizers.Add(secret);
 
         Title = "Bus";
         BackgroundColor = Theme.Ink900;
@@ -154,7 +161,9 @@ public sealed class BusPage : ContentPage
             {
                 Row("Bus GPS", _fixValue, _fixLamp),
                 Rule(),
-                Row("Scans today", _scansValue),
+                Tappable(
+                    Row("Scans today", _scansValue),
+                    () => Navigation.PushAsync(_services.GetRequiredService<ScansPage>())),
                 _schoolRule,
                 _schoolRow,
             },
@@ -464,6 +473,48 @@ public sealed class BusPage : ContentPage
     };
 
     /// <summary>One fact: a name on the left, the value on the right.</summary>
+    /// <summary>
+    /// Make a row lead somewhere.
+    /// </summary>
+    /// <remarks>
+    /// The scans used to have a tab of their own. It lost that tab to Watch,
+    /// because iOS turns a sixth into a "More" list -- and this is the better
+    /// place for them anyway: the way to more detail about a line is the line.
+    /// </remarks>
+    private static Grid Tappable(Grid row, Func<Task> go)
+    {
+        TapGestureRecognizer tap = new();
+        tap.Tapped += (_, _) => go().FireAndForget();
+        row.GestureRecognizers.Add(tap);
+        return row;
+    }
+
+    /// <summary>
+    /// Five taps on the rider's name.
+    /// </summary>
+    /// <remarks>
+    /// The one thing in here that is not useful, and it has earned its place:
+    /// this app has been quietly counting a child's school runs since August,
+    /// and that is worth being able to look at.
+    ///
+    /// The window matters. Without it, five taps spread across a week
+    /// eventually open it by accident, which is the opposite of a secret.
+    /// </remarks>
+    private void SecretTap()
+    {
+        DateTimeOffset now = DateTimeOffset.Now;
+        _taps = now - _lastTap > TimeSpan.FromSeconds(2) ? 1 : _taps + 1;
+        _lastTap = now;
+
+        if (_taps < 5)
+        {
+            return;
+        }
+
+        _taps = 0;
+        Navigation.PushAsync(new AlmanacPage(_bus)).FireAndForget();
+    }
+
     private static Grid Row(string name, Label value, View? lamp = null)
     {
         Grid row = new()

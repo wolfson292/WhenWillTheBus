@@ -15,10 +15,13 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- The HOME SCREEN label, not the App Store listing (which is set in App
-         Store Connect). iOS renders "When Will The Bus" under the icon as an
-         unspaced "WhenWillTheBus", and the short word is the one a parent's
-         thumb is hunting for anyway. -->
-    <ApplicationTitle>Bus</ApplicationTitle>
+         Store Connect).
+
+         THE BUNDLE ID DOES NOT CHANGE WITH IT. ApplicationId is welded to the
+         TestFlight build lineage, the App Group the widget shares, the APNs
+         topic the worker pushes to, and the provisioning profiles. Renaming
+         it would orphan every install rather than update them. -->
+    <ApplicationTitle>Wolf Family</ApplicationTitle>
 
     <!-- ApplicationId comes from Directory.Build.props at the repository root,
          which is the single place it is defined. -->

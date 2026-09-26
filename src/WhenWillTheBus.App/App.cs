@@ -129,9 +129,11 @@ public sealed class App : Application
         // property, and half-done that reads as a bug rather than a theme.
         UserAppTheme = AppTheme.Dark;
 
-        // Four tabs rather than one screen with a Settings button. The bus is
-        // what you open the app for, so it stays first and stays uncluttered;
-        // the map, the scans and the settings are each a place to go looking.
+        // FIVE, AND NOT SIX. iOS collapses a seventh-of-a-tab-bar into a "More"
+        // list, which buries whatever lands in it -- so Watch takes the tab
+        // that Scans had, and the scans are reached by tapping the line about
+        // them on the bus screen, which is where somebody looks for them
+        // anyway.
         TabbedPage tabs = new()
         {
             BackgroundColor = Theme.Ink900,
@@ -142,7 +144,7 @@ public sealed class App : Application
 
         tabs.Children.Add(Tab<BusPage>("tab_bus.png"));
         tabs.Children.Add(Tab<MapPage>("tab_map.png"));
-        tabs.Children.Add(Tab<ScansPage>("tab_scans.png"));
+        tabs.Children.Add(Tab<WatchPage>("tab_watch.png"));
         tabs.Children.Add(Tab<HistoryPage>("tab_history.png"));
         tabs.Children.Add(Tab<SignInPage>("tab_settings.png"));
 
