@@ -347,7 +347,7 @@ public sealed class BusService : INotifyPropertyChanged
         Student rider,
         Journey journey,
         ArrivalPrediction? prediction,
-        RiderInfo info,
+        RiderInfo? info,
         DateTimeOffset now)
     {
         if (!LiveActivityBridge.Enabled)

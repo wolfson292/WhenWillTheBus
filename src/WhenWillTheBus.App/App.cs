@@ -32,7 +32,7 @@ public sealed class App : Application
             return;
         }
 
-        bool accepted = await page.DisplayAlert(
+        bool accepted = await page.DisplayAlertAsync(
             "Use this worker?",
             $"This link points the app at:\n\n{details.Url}\n\nIt also carries an access key. "
             + "Only accept it from someone you trust.",
@@ -48,7 +48,7 @@ public sealed class App : Application
         await credentials.SaveServerAsync(details.Url, details.Key);
         await _bus.StartAsync();
 
-        await page.DisplayAlert(
+        await page.DisplayAlertAsync(
             "Saved",
             _bus.Problem ?? "Connected to the worker.",
             "OK");

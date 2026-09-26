@@ -97,7 +97,7 @@ public sealed class MapPage : ContentPage
         }
 
         _caption.Text = Caption(info);
-        Frame(info);
+        FrameBusAndStop(info);
     }
 
     /// <summary>
@@ -158,7 +158,7 @@ public sealed class MapPage : ContentPage
     /// Only once: re-framing on every poll would yank the map out from under
     /// anyone who had panned or zoomed it, every thirty seconds.
     /// </remarks>
-    private void Frame(RiderInfo info)
+    private void FrameBusAndStop(RiderInfo info)
     {
         if (_centred)
         {
