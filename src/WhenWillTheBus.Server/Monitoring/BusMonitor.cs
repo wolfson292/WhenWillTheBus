@@ -135,7 +135,19 @@ public sealed class BusMonitor(
 
         if (now - _scansPolledAt >= _options.ScanPoll)
         {
-            await RefreshScansAsync(token).ConfigureAwait(false);
+            // PERSISTED WHEN THEY CHANGE, not as a side effect of learning an
+            // arrival. Saving only on promotion meant a scan arriving after the
+            // day's last arrival was never written -- and a restart put the
+            // history back to whatever had been. Across a week of redeploys
+            // that left exactly one scan on disk, so the school-arrival
+            // estimate never had more than a fragment of a day to work from and
+            // the morning ride had no target at 08:01, which is the only time
+            // it matters.
+            if (await RefreshScansAsync(token).ConfigureAwait(false))
+            {
+                await SaveHistoryAsync(token, "scans").ConfigureAwait(false);
+            }
+
             _scansPolledAt = now;
         }
 
@@ -184,7 +196,7 @@ public sealed class BusMonitor(
 
         if (engine.PromotePending(_students, now))
         {
-            await SaveHistoryAsync(token).ConfigureAwait(false);
+            await SaveHistoryAsync(token, "a new arrival").ConfigureAwait(false);
         }
 
         if (registry.Prune(now) > 0)
@@ -223,8 +235,11 @@ public sealed class BusMonitor(
         logger.LogInformation("Roster: {Riders}", string.Join(", ", fresh.Values.Select(rider => rider.Name)));
     }
 
-    private async Task RefreshScansAsync(CancellationToken token)
+    /// <summary>Poll the scans. Returns whether anything actually changed.</summary>
+    private async Task<bool> RefreshScansAsync(CancellationToken token)
     {
+        bool changed = false;
+
         using System.Text.Json.JsonDocument scans = await client.GetStudentScansAsync(token).ConfigureAwait(false);
 
         Dictionary<long, List<ScanEvent>> byChild = RosterReader.ReadScans(
@@ -248,17 +263,24 @@ public sealed class BusMonitor(
                 .TakeLast(HistoryStore.ScanHistoryLimit)
                 .ToList();
 
+            // Compared BEFORE classifying: the classifier can relabel an
+            // existing scan as a whole day comes into view, and a relabelling
+            // is worth persisting too.
+            changed |= merged.Count != student.Scans.Count;
+
             _students[childId] = student with
             {
                 Scans = ScanClassifier.Classify(merged, student.SchoolName, clock),
             };
         }
+
+        return changed;
     }
 
     /// <summary>Persist what has been learned. Public so an import can write through.</summary>
-    public Task PersistAsync(CancellationToken token = default) => SaveHistoryAsync(token);
+    public Task PersistAsync(CancellationToken token = default) => SaveHistoryAsync(token, "asked to");
 
-    private async Task SaveHistoryAsync(CancellationToken token)
+    private async Task SaveHistoryAsync(CancellationToken token, string why)
     {
         List<StoredRider> riders = _students.Keys
             .Select(childId => new StoredRider
@@ -270,6 +292,6 @@ public sealed class BusMonitor(
             .ToList();
 
         await HistoryStore.SaveAsync(_options.HistoryPath, riders, token).ConfigureAwait(false);
-        logger.LogInformation("Learned a new arrival; history saved");
+        logger.LogInformation("History saved ({Why})", why);
     }
 }

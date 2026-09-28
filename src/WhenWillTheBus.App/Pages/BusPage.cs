@@ -329,9 +329,28 @@ public sealed class BusPage : ContentPage
 
         DrawTrack(journey.Progress, trackColour);
 
-        _distance.Text = _bus.Latest?.DistanceMiles is double miles
-            ? $"{miles:F1} miles out"
-            : string.Empty;
+        // THE TRACK MEANS A DIFFERENT THING ONCE SHE IS ON THE BUS. Coming to
+        // the stop it closes a distance; riding to school it fills across a
+        // journey, and the distance to the home stop is then growing rather
+        // than shrinking. Captions of "0.9 miles out" and "your stop" under a
+        // bar labelled "riding to school" describe the opposite of what is
+        // happening.
+        if (aboard)
+        {
+            _distance.Text = journey.Boarded is DateTimeOffset on
+                ? $"on at {on.ToLocalTime():h:mm}"
+                : "aboard";
+
+            _stopCaption.Text = journey.Stage is JourneyStage.ToSchool ? "school" : "your stop";
+        }
+        else
+        {
+            _distance.Text = _bus.Latest?.DistanceMiles is double miles
+                ? $"{miles:F1} miles out"
+                : string.Empty;
+
+            _stopCaption.Text = "your stop";
+        }
 
         // Being honest about how the answer was reached. A window centred on a
         // timetable twenty minutes out is the failure that hides behind a
