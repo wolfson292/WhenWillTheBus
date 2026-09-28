@@ -111,6 +111,7 @@ builder.Services.AddHttpClient<ArrClient>(http => http.Timeout = TimeSpan.FromSe
 // each sets its own.
 builder.Services.AddHttpClient<MovieNightClient>(http => http.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddSingleton<RequestLog>();
+builder.Services.AddSingleton<SuggestionThrottle>();
 
 builder.Services.AddSingleton<DeviceRegistry>();
 builder.Services.AddSingleton<ClientRegistry>();
@@ -739,7 +740,7 @@ app.MapGet("/admin/family-key", (IConfiguration configuration) =>
     Results.Ok(new { key = configuration["Api:Key"] }));
 
 /// <summary>What MagicMovieNight suggests putting on tonight.</summary>
-app.MapGet("/admin/tonight", async (MovieNightClient movies, int? take, CancellationToken token) =>
+app.MapGet("/media/tonight", async (MovieNightClient movies, int? take, CancellationToken token) =>
 {
     TonightBoard board = await movies.TonightAsync(take ?? 5, token);
     return Results.Ok(new
@@ -755,15 +756,32 @@ app.MapGet("/admin/tonight", async (MovieNightClient movies, int? take, Cancella
 /// Ask MagicMovieNight for a fresh suggestion, in words.
 /// </summary>
 /// <remarks>
-/// Admin-only not because the answer is sensitive but because making one
-/// SPENDS MONEY and takes tens of seconds, and a button anybody could hold down
-/// is a bill anybody could run up.
+/// OPEN TO THE HOUSEHOLD, not just an admin -- it is the most useful thing here
+/// and the person most likely to want it is not the person holding the admin
+/// key.
+///
+/// But making one SPENDS MONEY and takes half a minute, so it is rate limited
+/// rather than left unbounded. A button anybody can press is fine; a button
+/// anybody can hold down is a bill. The limit is generous enough that nobody
+/// deciding what to watch will ever meet it, and tight enough that a stuck
+/// finger or a retry loop cannot run up a tab.
 /// </remarks>
-app.MapPost("/admin/suggest", async (
+app.MapPost("/media/suggest", async (
     SuggestAsk ask,
     MovieNightClient movies,
+    SuggestionThrottle throttle,
+    LocalClock clock,
     CancellationToken token) =>
 {
+    if (throttle.TooSoon(clock.Now, out TimeSpan wait))
+    {
+        return Results.Ok(new
+        {
+            error = $"Just a moment — try again in {Math.Ceiling(wait.TotalSeconds)}s.",
+            picks = Array.Empty<object>(),
+        });
+    }
+
     TonightBoard board = await movies.SuggestAsync(ask.Prompt, ask.Kind, ask.Count ?? 5, token);
     return Results.Ok(new { board.Error, board.DecidedAt, picks = board.Picks });
 });
@@ -957,6 +975,41 @@ internal sealed record ClientHello(
 internal static partial class Program
 {
     public const string TestFlight = "itms-beta://beta.itunes.apple.com/v1/app/6814865915";
+}
+
+/// <summary>
+/// How often a suggestion may be asked for.
+/// </summary>
+/// <remarks>
+/// One at a time, and a short gap after each. A run takes half a minute
+/// anyway, so this is invisible to anybody actually choosing what to watch --
+/// it exists for the double tap, the pull-to-refresh and the retry loop.
+/// </remarks>
+internal sealed class SuggestionThrottle
+{
+    private static readonly TimeSpan Gap = TimeSpan.FromSeconds(45);
+    private readonly Lock _door = new();
+    private DateTimeOffset _last = DateTimeOffset.MinValue;
+
+    public bool TooSoon(DateTimeOffset now, out TimeSpan wait)
+    {
+        lock (_door)
+        {
+            TimeSpan since = now - _last;
+            if (since < Gap)
+            {
+                wait = Gap - since;
+                return true;
+            }
+
+            // Stamped on the WAY IN, not on the way out: two requests arriving
+            // together would otherwise both pass, which is exactly the double
+            // tap this is here for.
+            _last = now;
+            wait = TimeSpan.Zero;
+            return false;
+        }
+    }
 }
 
 /// <summary>A suggestion asked for in words.</summary>

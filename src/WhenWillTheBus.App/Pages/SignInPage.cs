@@ -60,7 +60,7 @@ public sealed class SignInPage : ContentPage
         _bus = bus;
 
         _adminButton.Clicked += (_, _) =>
-            Navigation.PushAsync(new AdminPage(_server, _media)).FireAndForget();
+            Navigation.PushAsync(new AdminPage(_server)).FireAndForget();
 
 
         Title = "Settings";

@@ -264,7 +264,7 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
 
     /// <summary>The last set of picks, from MagicMovieNight.</summary>
     public async Task<TonightBoard> TonightAsync(CancellationToken cancellationToken = default) =>
-        Board(await ReadAsync("/admin/tonight", cancellationToken));
+        Board(await ReadAsync("/media/tonight", cancellationToken));
 
     /// <summary>
     /// Ask for a fresh set, in words.
@@ -286,7 +286,7 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
 
         try
         {
-            using HttpRequestMessage request = new(HttpMethod.Post, $"{server.Value.Url}/admin/suggest")
+            using HttpRequestMessage request = new(HttpMethod.Post, $"{server.Value.Url}/media/suggest")
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json"),
             };
@@ -299,11 +299,6 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
             slower.CancelAfter(TimeSpan.FromMinutes(3));
 
             using HttpResponseMessage response = await http.SendAsync(request, slower.Token);
-            if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-            {
-                return new TonightBoard([], "This phone is not an admin.");
-            }
-
             return Board(await response.Content.ReadAsStringAsync(slower.Token));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)

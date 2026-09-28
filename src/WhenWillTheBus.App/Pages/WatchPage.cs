@@ -20,6 +20,24 @@ namespace WhenWillTheBus.App.Pages;
 public sealed class WatchPage : ContentPage
 {
     private readonly MediaClient _media;
+    private readonly ServerLink _server;
+
+    private readonly Entry _mood = new()
+    {
+        Placeholder = "Something short and funny? A series to start?",
+    };
+
+    private readonly Picker _kind = new()
+    {
+        Title = "Films or series",
+        TextColor = Theme.Text,
+        TitleColor = Theme.TextDim,
+        ItemsSource = new List<string> { "Either", "Films only", "Series only" },
+        SelectedIndex = 0,
+    };
+
+    private readonly Button _ask = new() { Text = "Suggest something", FontSize = 14 };
+    private readonly ActivityIndicator _thinking = new() { Color = Theme.Bus, IsVisible = false };
 
     private readonly SearchBar _search = new()
     {
@@ -40,9 +58,12 @@ public sealed class WatchPage : ContentPage
 
     private CancellationTokenSource? _inFlight;
 
-    public WatchPage(MediaClient media)
+    public WatchPage(MediaClient media, ServerLink server)
     {
         _media = media;
+        _server = server;
+
+        _ask.Clicked += async (_, _) => await SuggestAsync();
         Title = "Watch";
         Padding = new Thickness(16, 8);
 
@@ -60,7 +81,37 @@ public sealed class WatchPage : ContentPage
             Content = new VerticalStackLayout
             {
                 Spacing = 4,
-                Children = { _search, _busy, _message, _results },
+                Children =
+                {
+                    _search,
+
+                    // Underneath the search, because "find this exact thing" is
+                    // the commoner errand and the one people arrive knowing.
+                    // "Decide for me" is what you fall back to.
+                    new Label
+                    {
+                        Text = "Or let it pick",
+                        FontSize = 13,
+                        FontAttributes = FontAttributes.Bold,
+                        TextColor = Theme.TextDim,
+                        Margin = new Thickness(0, 14, 0, 2),
+                    },
+                    new Label
+                    {
+                        Text = "Suggestions come from what the household already watches. "
+                            + "Say what you are in the mood for, or leave it blank.",
+                        FontSize = 12,
+                        TextColor = Theme.TextDim,
+                    },
+                    _mood,
+                    _kind,
+                    _ask,
+                    _thinking,
+
+                    _busy,
+                    _message,
+                    _results,
+                },
             },
         };
     }
@@ -126,6 +177,86 @@ public sealed class WatchPage : ContentPage
         }
     }
 
+    /// <summary>Ask for suggestions rather than searching for one thing.</summary>
+    private async Task SuggestAsync()
+    {
+        _inFlight?.Cancel();
+        _ask.IsEnabled = false;
+        _thinking.IsVisible = _thinking.IsRunning = true;
+        _results.Clear();
+
+        // Said out loud. Half a minute of nothing reads as a button that did
+        // not work, and the reflex is to press it again.
+        _message.Text = "Thinking. This takes a little while.";
+
+        string? kind = _kind.SelectedIndex switch
+        {
+            1 => "movie",
+            2 => "tv",
+            _ => null,
+        };
+
+        TonightBoard board = await _server.SuggestAsync(_mood.Text?.Trim(), kind);
+
+        _thinking.IsVisible = _thinking.IsRunning = false;
+        _ask.IsEnabled = true;
+
+        if (board.Error is string wrong)
+        {
+            _message.Text = wrong;
+            return;
+        }
+
+        if (board.Picks.Count == 0)
+        {
+            _message.Text = "Nothing came back. Suggestions need MagicMovieNight to be running.";
+            return;
+        }
+
+        _message.Text = "Suggestions";
+        foreach (TonightPick pick in board.Picks)
+        {
+            _results.Add(SuggestionCard(pick));
+        }
+    }
+
+    /// <summary>
+    /// A suggestion, as a card that can be asked for.
+    /// </summary>
+    /// <remarks>
+    /// Requested through the SAME path a search result uses, so the two behave
+    /// identically -- including the refusal when it turns out to be in the
+    /// library after all.
+    /// </remarks>
+    private View SuggestionCard(TonightPick pick)
+    {
+        List<string> facts = [pick.IsSeries ? "Series" : "Film"];
+        if (pick.InLibrary)
+        {
+            facts.Add("already in the library");
+        }
+        else if (pick.WhereToWatch is string service)
+        {
+            facts.Add(service);
+        }
+
+        if (pick.RuntimeMinutes is int minutes && !pick.IsSeries)
+        {
+            facts.Add($"{minutes} min");
+        }
+
+        WatchResult asRequest = new(
+            pick.IsSeries ? "series" : "movie",
+            pick.Title,
+            pick.Year,
+            pick.RequestId ?? 0,
+            pick.Pitch,
+            pick.PosterUrl,
+            AlreadyHave: !pick.CanRequest);
+
+        return Card(asRequest, facts, pick.Pitch);
+    }
+
     private async Task ShowRecentAsync()
     {
         _results.Clear();
@@ -145,7 +276,15 @@ public sealed class WatchPage : ContentPage
     }
 
     /// <summary>One searchable result, as a tappable card.</summary>
-    private View Card(WatchResult result)
+    /// <summary>
+    /// One tappable card, used for a search result and for a suggestion alike.
+    /// </summary>
+    /// <param name="facts">
+    /// Overrides the usual kind-and-library line. A suggestion knows more than
+    /// a search result does — where it is streaming, how long it runs — and
+    /// that is the line worth spending on it.
+    /// </param>
+    private View Card(WatchResult result, IReadOnlyList<string>? facts = null, string? blurb = null)
     {
         Label outcome = new() { FontSize = 12, TextColor = Theme.TextDim, IsVisible = false };
 
@@ -172,20 +311,22 @@ public sealed class WatchPage : ContentPage
                 },
                 new Label
                 {
-                    Text = result.AlreadyHave
-                        ? (result.IsSeries ? "Series · already in the library" : "Film · already in the library")
-                        : (result.IsSeries ? "Series" : "Film"),
+                    Text = facts is not null
+                        ? string.Join(" · ", facts)
+                        : result.AlreadyHave
+                            ? (result.IsSeries ? "Series · already in the library" : "Film · already in the library")
+                            : (result.IsSeries ? "Series" : "Film"),
                     FontSize = 12,
                     TextColor = result.AlreadyHave ? Theme.Aboard : Theme.TextDim,
                 },
                 new Label
                 {
-                    Text = result.Overview ?? string.Empty,
+                    Text = blurb ?? result.Overview ?? string.Empty,
                     FontSize = 12,
                     TextColor = Theme.TextMid,
                     MaxLines = 3,
                     LineBreakMode = LineBreakMode.TailTruncation,
-                    IsVisible = !string.IsNullOrWhiteSpace(result.Overview),
+                    IsVisible = !string.IsNullOrWhiteSpace(blurb ?? result.Overview),
                 },
                 outcome,
             },
