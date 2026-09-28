@@ -25,6 +25,11 @@ public static class MauiProgram
             Timeout = Tuning.RequestTimeout,
         });
 
+        // For the calls that are slow by design. See PatientClient: a client's
+        // own timeout overrides any token, so two very different budgets need
+        // two clients.
+        builder.Services.AddSingleton(_ => PatientClient.Create());
+
         builder.Services.AddSingleton<CredentialStore>();
         builder.Services.AddSingleton<ServerLink>();
         builder.Services.AddSingleton<MediaClient>();

@@ -60,7 +60,7 @@ public sealed record FamilyPhone(
 /// suspends the app — which it will, within seconds of the phone going in a
 /// pocket, and for most of the twenty minutes that actually matter.
 /// </remarks>
-public sealed class ServerLink(HttpClient http, CredentialStore credentials)
+public sealed class ServerLink(HttpClient http, PatientClient patient, CredentialStore credentials)
 {
     /// <summary>Register an activity's push token. Safe to call repeatedly.</summary>
     public async Task<bool> RegisterAsync(
@@ -298,7 +298,9 @@ public sealed class ServerLink(HttpClient http, CredentialStore credentials)
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             slower.CancelAfter(TimeSpan.FromMinutes(3));
 
-            using HttpResponseMessage response = await http.SendAsync(request, slower.Token);
+            // The patient client, not the shared one: thirty seconds is less
+            // than this reliably takes.
+            using HttpResponseMessage response = await patient.Http.SendAsync(request, slower.Token);
             return Board(await response.Content.ReadAsStringAsync(slower.Token));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
