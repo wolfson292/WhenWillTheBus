@@ -151,7 +151,7 @@ public sealed class BusMonitor(
             _scansPolledAt = now;
         }
 
-        bool anyWatched = false;
+        bool busy = false;
 
         foreach (Student student in _students.Values.ToList())
         {
@@ -160,25 +160,33 @@ public sealed class BusMonitor(
                 continue;
             }
 
+            // WATCHING THE BUS AND HAVING A JOURNEY TO SHOW ARE DIFFERENT
+            // QUESTIONS, and answering both with this one cost a whole morning
+            // ride. This window is built around the arrival at the RIDER'S
+            // STOP and closes thirty minutes after it -- but the morning
+            // journey BEGINS at that arrival and runs for another hour to the
+            // school. On 29 Sep the pickup was at 07:59 and this closed at
+            // 08:31, so the Lock Screen card stopped being updated 36% of the
+            // way to school, sat frozen there, and was never even cleared; the
+            // app, which evaluates the stage on every request, showed the same
+            // ride correctly to the end.
             bool watched = engine.IsWatching(student, Run.Am, now) || engine.IsWatching(student, Run.Pm, now);
-            anyWatched |= watched;
 
-            // Outside every window there is nothing this reading could change,
-            // and the service belongs to somebody else.
-            if (!watched)
+            // Only the READING is gated. Outside every window there is nothing
+            // it could change, and the service belongs to somebody else.
+            RiderInfo? info = null;
+            if (watched)
             {
-                continue;
+                info = await client.GetRiderInfoAsync(
+                    student.BusNumber,
+                    student.ChildId,
+                    _lastServerTime.GetValueOrDefault(student.ChildId),
+                    token).ConfigureAwait(false);
+
+                _lastServerTime[student.ChildId] = info.ServerTime;
+
+                engine.Observe(student, info, now);
             }
-
-            RiderInfo info = await client.GetRiderInfoAsync(
-                student.BusNumber,
-                student.ChildId,
-                _lastServerTime.GetValueOrDefault(student.ChildId),
-                token).ConfigureAwait(false);
-
-            _lastServerTime[student.ChildId] = info.ServerTime;
-
-            engine.Observe(student, info, now);
 
             ArrivalPrediction? prediction = engine.PredictNextArrival(student, now);
 
@@ -189,9 +197,21 @@ public sealed class BusMonitor(
             SchoolArrival? school = SchoolArrivalPredictor.Predict(student, now, clock);
             Journey journey = engine.Stage(student, now, prediction, school?.Arrival);
 
+            // Deliberately NOT the stale reading: a card claiming a distance
+            // and a fix time from half an hour ago is worse than one that
+            // admits it has neither. The aboard stages draw a bar from elapsed
+            // time and never needed it.
             await publisher
                 .PublishAsync(student, journey, prediction, info, now, token)
                 .ConfigureAwait(false);
+
+            // A journey in progress is reason enough to keep the fast cadence:
+            // the push backstop is five minutes and a card goes visibly stale
+            // two minutes after that, so polling this rider at the idle rate
+            // would leave the ride to school flickering between fresh and
+            // stale for an hour. Nothing here calls WheresTheBus unless the
+            // rider is also watched.
+            busy |= watched || journey.Active;
         }
 
         if (engine.PromotePending(_students, now))
@@ -209,7 +229,7 @@ public sealed class BusMonitor(
             await clients.SaveAsync(token).ConfigureAwait(false);
         }
 
-        return anyWatched ? _options.BusPoll : _options.IdlePoll;
+        return busy ? _options.BusPoll : _options.IdlePoll;
     }
 
     private async Task RefreshRosterAsync(CancellationToken token)

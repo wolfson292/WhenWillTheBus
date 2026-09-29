@@ -155,13 +155,23 @@ public sealed class PredictionEngine(LocalClock clock)
     }
 
     /// <summary>
-    /// Whether this run's route is worth recording at this instant: the approach
-    /// window, plus the whole ride once a scan says the rider is aboard.
+    /// Whether this run's approach to the RIDER'S STOP is worth recording at
+    /// this instant: the approach window, reaching back to a boarding scan that
+    /// beat it open.
     /// </summary>
     /// <remarks>
     /// The ride home starts twenty to thirty minutes before the approach window
     /// opens, and that stretch is exactly what a route estimate needs: it is
-    /// where a skipped stop shows up as being further along than usual.
+    /// where a skipped stop shows up as being further along than usual. That is
+    /// the whole job of the scan branch below — it extends the window BACKWARDS,
+    /// never past its end.
+    ///
+    /// SO THIS IS NOT "IS A JOURNEY HAPPENING". It closes thirty minutes after
+    /// the bus reaches the stop, which in the morning is the moment the ride to
+    /// school begins. Callers that want to know whether there is something to
+    /// show should ask <see cref="Stage"/> and read <see cref="Journey.Active"/>;
+    /// asking this instead froze a Lock Screen card 36% of the way to school on
+    /// 29 Sep and left it frozen.
     /// </remarks>
     public bool IsWatching(Student student, Run run, DateTimeOffset now)
     {

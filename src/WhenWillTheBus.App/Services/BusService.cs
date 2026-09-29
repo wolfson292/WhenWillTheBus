@@ -275,8 +275,13 @@ public sealed class BusService : INotifyPropertyChanged
 
         // Full rate while a run is actually happening; otherwise there is nothing
         // a reading could change, and the service belongs to somebody else.
+        //
+        // A JOURNEY COUNTS EVEN WHEN NO WINDOW IS OPEN. The watch window closes
+        // thirty minutes after the bus reaches the stop, which in the morning is
+        // where the ride to school STARTS -- so asking only that question drops
+        // the ride to a five-minute refresh for the hour it is on screen.
         bool watched = _engine.IsWatching(rider, Run.Am, now) || _engine.IsWatching(rider, Run.Pm, now);
-        return watched ? Tuning.BusPollInterval : Tuning.ScanPollInterval;
+        return watched || journey.Active ? Tuning.BusPollInterval : Tuning.ScanPollInterval;
     }
 
     /// <summary>
