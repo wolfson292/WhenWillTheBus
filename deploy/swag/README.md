@@ -35,21 +35,28 @@ two rules stand in for the missing session layer:
 from Cloudflare's ranges. Anything else is someone talking directly to the origin
 address, which is exactly what to refuse. Verified: a direct request to the
 origin returns **403**, while another service on the same proxy still answers —
-the rule is scoped, not global.
+the rule is scoped, not global. The check uses the *connecting* address
+(`$realip_remote_addr`, via a `geo` block), not `allow`/`deny`, because SWAG
+rewrites `$remote_addr` to the visitor (below).
 
-**Rate limited per real visitor**, keyed on `CF-Connecting-IP` rather than
-`$binary_remote_addr`. Every request arrives from a Cloudflare edge, so limiting
-on the connecting address would lump unrelated people together and throttle
-almost nothing. Answers **429**, not nginx's default 503, which reads as a broken
-server and invites retrying harder.
+**Rate limited per real visitor**, keyed on `$binary_remote_addr`. That only
+works because SWAG restores the visitor's address from `CF-Connecting-IP`, and
+trusts that header only from Cloudflare's ranges (`set_real_ip_from` +
+`real_ip_header` in the http context). Without that, every request would come
+from a Cloudflare edge and the limit would lump unrelated people together; with
+it, a forged `CF-Connecting-IP` sent straight to the origin is ignored. Answers
+**429**, not nginx's default 503, which reads as a broken server and invites
+retrying harder.
 
 The bearer token is still the primary control; the worker compares it in fixed
 time so the endpoint cannot be used to guess it a byte at a time.
 
 ## If Cloudflare changes its ranges
 
-The allow-list is a copy of <https://www.cloudflare.com/ips>. If it changes,
-legitimate traffic starts returning 403. Re-fetch and reload.
+The `geo` block in `00-whenwillthebus-limits.conf` is a copy of
+<https://www.cloudflare.com/ips>, as is SWAG's `set_real_ip_from` list. If the
+ranges change, legitimate traffic starts returning 403. Re-fetch, update both,
+and reload.
 
 ## Verifying
 
