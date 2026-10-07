@@ -17,8 +17,14 @@ import Foundation
 import WidgetKit
 
 private var liveActivity: Any?
-private var tokenCallback: (@convention(c) (UnsafePointer<CChar>?) -> Void)?
+private var tokenCallback: (@convention(c) (UnsafePointer<CChar>?, Int64, UnsafePointer<CChar>?) -> Void)?
+private var startTokenCallback: (@convention(c) (UnsafePointer<CChar>?) -> Void)?
 private var pushAvailable = false
+
+/// Activities whose token is already being watched, so one seen twice -- at
+/// launch and again in activityUpdates -- reports its token once per change.
+@MainActor private var watched = Set<String>()
+@MainActor private var observing = false
 
 /// Whether the user has left Live Activities switched on for this app.
 ///
@@ -32,22 +38,90 @@ public func wwtb_activities_enabled() -> Bool {
     return false
 }
 
-/// Register a callback to receive this activity's push token, as hex.
+/// Register a callback to receive every card's push token, as hex, together
+/// with the journey and rider that card belongs to.
 ///
 /// The token is for the ACTIVITY, not the device, and it changes. Whenever it
 /// does, the C# side re-registers it with the worker — otherwise the worker
 /// keeps pushing to a token Apple has already retired, silently.
+///
+/// THE JOURNEY TRAVELS WITH THE TOKEN. The C# side used to pair the token with
+/// whichever journey it believed it had started, and a token arriving before
+/// that belief was recorded -- or for a card the WORKER started, which this
+/// process never started at all -- was dropped on the floor. On 7 Oct that left
+/// a card nobody could update for the whole of the morning.
+///
+/// Also begins watching for cards started by push. iOS wakes the app in the
+/// background to deliver a push-started card's token, so this must run at
+/// launch, not when a screen first appears: a background launch has none.
 @_cdecl("wwtb_set_token_callback")
-public func wwtb_set_token_callback(_ callback: @escaping @convention(c) (UnsafePointer<CChar>?) -> Void) {
+public func wwtb_set_token_callback(
+    _ callback: @escaping @convention(c) (UnsafePointer<CChar>?, Int64, UnsafePointer<CChar>?) -> Void
+) {
     tokenCallback = callback
+
+    guard #available(iOS 16.2, *) else { return }
+    Task { @MainActor in
+        guard !observing else { return }
+        observing = true
+
+        for running in Activity<BusActivityAttributes>.activities {
+            watch(running)
+        }
+
+        for await arriving in Activity<BusActivityAttributes>.activityUpdates {
+            watch(arriving)
+        }
+    }
+}
+
+/// Register a callback to receive this app's PUSH-TO-START token, as hex.
+///
+/// One per app for this activity type, and what lets the worker put a card on
+/// the Lock Screen when the bus sets off without anybody opening the app. It
+/// changes rarely, and it is sent on to the worker each time it does.
+/// iOS 17.2 and later; earlier, the worker sends an ordinary notification.
+@_cdecl("wwtb_set_start_token_callback")
+public func wwtb_set_start_token_callback(_ callback: @escaping @convention(c) (UnsafePointer<CChar>?) -> Void) {
+    startTokenCallback = callback
+
+    guard #available(iOS 17.2, *) else { return }
+    Task {
+        for await tokenData in Activity<BusActivityAttributes>.pushToStartTokenUpdates {
+            let hex = tokenData.map { String(format: "%02x", $0) }.joined()
+            hex.withCString { startTokenCallback?($0) }
+        }
+    }
+}
+
+/// Report this card's token, now and every time it changes.
+@available(iOS 16.2, *)
+@MainActor
+private func watch(_ activity: Activity<BusActivityAttributes>) {
+    guard !watched.contains(activity.id) else { return }
+    watched.insert(activity.id)
+
+    let journeyId = activity.attributes.journeyId
+    let childId = activity.attributes.childId
+
+    Task {
+        for await tokenData in activity.pushTokenUpdates {
+            let hex = tokenData.map { String(format: "%02x", $0) }.joined()
+            journeyId.withCString { journey in
+                hex.withCString { token in tokenCallback?(journey, childId, token) }
+            }
+        }
+    }
 }
 
 /// Start a Live Activity for one journey, locally.
 ///
-/// STARTING LOCALLY IS THE POINT OF THE REWRITE. Push-to-start does not work
-/// when the app is closed, its token goes stale on Apple's side with no signal,
-/// an app update kills it, and every one of those failures is completely silent.
-/// An activity started here and updated by push is a far more reliable path.
+/// One of TWO ways a card starts. The worker also starts one by push when the
+/// morning bus sets off, because nobody opens an app at 07:50 on a school day;
+/// this is the other, for whenever somebody does. Push-to-start fails silently
+/// if its token has gone stale, so a card started here and updated by push
+/// remains the more reliable of the two -- and the worker falls back to an
+/// ordinary notification for a phone it cannot start a card on.
 @_cdecl("wwtb_start_activity")
 public func wwtb_start_activity(
     _ journeyId: UnsafePointer<CChar>,
@@ -65,6 +139,19 @@ public func wwtb_start_activity(
     // is what left three cards started and cleared in seventy minutes.
     if let running = liveActivity as? Activity<BusActivityAttributes>,
        running.attributes.journeyId == id {
+        return true
+    }
+
+    // ADOPT A CARD THE WORKER ALREADY STARTED. The bus setting off puts one on
+    // the Lock Screen by push; opening the app afterwards must carry on with
+    // that one rather than start a second beside it. Push-started cards are
+    // always push-updatable.
+    if let started = Activity<BusActivityAttributes>.activities.first(where: {
+        $0.attributes.journeyId == id && $0.activityState == .active
+    }) {
+        liveActivity = started
+        pushAvailable = true
+        Task { @MainActor in watch(started) }
         return true
     }
 
@@ -105,12 +192,7 @@ public func wwtb_start_activity(
     liveActivity = started
 
     if pushAvailable {
-        Task {
-            for await tokenData in started.pushTokenUpdates {
-                let hex = tokenData.map { String(format: "%02x", $0) }.joined()
-                hex.withCString { tokenCallback?($0) }
-            }
-        }
+        Task { @MainActor in watch(started) }
     }
 
     return true

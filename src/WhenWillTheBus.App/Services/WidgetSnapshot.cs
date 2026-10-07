@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 using System.Runtime.InteropServices;
-using System.Text;
-using System.Text.Json;
 using Foundation;
 using WhenWillTheBus.Core.Api;
 using WhenWillTheBus.Core.Model;
+using WhenWillTheBus.Core.Notifications;
 
 namespace WhenWillTheBus.App.Services;
 
@@ -14,9 +13,10 @@ namespace WhenWillTheBus.App.Services;
 /// </summary>
 /// <remarks>
 /// A widget cannot run the prediction: it wakes for a moment, draws, and goes
-/// away. It has no network, no history and no engine. So the app writes a
-/// snapshot into the shared App Group container after each poll, and the widget
-/// reads it.
+/// away. It has no history and no engine. So the app writes a snapshot into
+/// the shared App Group container after each poll, and the widget reads it --
+/// or, when the app has not run for a while, asks the worker for the same
+/// thing. See <see cref="WriteWorkerLink"/>.
 ///
 /// EVERY FIELD HERE MUST MATCH <c>BusSnapshot</c> in
 /// ios/LiveActivity/BusSnapshot.swift. Two processes, two languages, and a
@@ -65,94 +65,64 @@ public static partial class WidgetSnapshot
         }
     }
 
+    /// <summary>The shared serialiser in Core, so the worker's /widget says exactly the same.</summary>
+    private const string WorkerLinkFilename = "widget-worker.json";
+
+    /// <summary>
+    /// Tell the widget where the worker is, so it can fetch for itself.
+    /// </summary>
+    /// <remarks>
+    /// The app only writes a snapshot while it is running, and on a school day
+    /// nobody runs it: on 7 Oct the widget had no status all afternoon while
+    /// the worker knew the rider was aboard and when she would be home.
+    ///
+    /// THIS PUTS THE WORKER KEY IN THE APP GROUP, which only this app and its
+    /// own widget can read. It is the same key the app already holds, on the
+    /// same phone; the widget needs it to authenticate, and an extension cannot
+    /// read the app's Keychain items without a shared access group. Removed
+    /// when no worker is configured, so signing out takes it away too.
+    /// </remarks>
+    public static void WriteWorkerLink((string Url, string Key)? worker)
+    {
+        try
+        {
+            NSUrl? container = NSFileManager.DefaultManager.GetContainerUrl(AppGroup);
+            if (container is null)
+            {
+                return;
+            }
+
+            string path = Path.Combine(container.Path!, WorkerLinkFilename);
+            if (worker is null)
+            {
+                File.Delete(path);
+                return;
+            }
+
+            string json = System.Text.Json.JsonSerializer.Serialize(
+                new Dictionary<string, string> { ["url"] = worker.Value.Url, ["key"] = worker.Value.Key });
+
+            // Readable after the first unlock, which is all a widget refreshing
+            // on a locked phone needs, and no more.
+            File.WriteAllText(path, json);
+            NSFileManager.DefaultManager.SetAttributes(
+                new NSFileAttributes { ProtectionKey = NSFileProtection.CompleteUntilFirstUserAuthentication },
+                path,
+                out _);
+
+            wwtb_reload_widgets();
+        }
+        catch (Exception)
+        {
+            // Deliberately swallowed: the widget falls back to the app's file.
+        }
+    }
+
     private static string Serialise(
         Student? rider,
         Journey journey,
         ArrivalPrediction? prediction,
         RiderInfo? info,
-        DateTimeOffset now)
-    {
-        using MemoryStream stream = new();
-        using (Utf8JsonWriter writer = new(stream))
-        {
-            writer.WriteStartObject();
-            writer.WriteString("riderName", rider?.Name ?? "Bus");
-            writer.WriteString("stage", StageName(journey.Stage));
-            writer.WriteString("basis", BasisName(prediction?.Basis));
-
-            // Whole-second epoch: Swift's .iso8601 decoder rejects the
-            // fractional seconds .NET writes by default.
-            //
-            // The prediction is only a FALLBACK for when no journey is running.
-            // Once the rider is aboard it describes the next run, not this one,
-            // and borrowing it puts the afternoon pickup under "riding to
-            // school" on the home screen.
-            bool aboard = journey.Stage is JourneyStage.ToSchool or JourneyStage.FromSchool;
-            DateTimeOffset? target = journey.Target ?? (aboard ? null : prediction?.Arrival);
-            if (target is not null)
-            {
-                writer.WriteNumber("target", target.Value.ToUnixTimeSeconds());
-            }
-            else
-            {
-                writer.WriteNull("target");
-            }
-
-            writer.WriteNumber("updatedAt", now.ToUnixTimeSeconds());
-
-            // 0-100 through the current stage, so the widget can draw the route
-            // track the card and the app both draw. A widget cannot work this
-            // out for itself: it has no engine, no history and no network.
-            if (journey.Progress is int progress)
-            {
-                writer.WriteNumber("progress", progress);
-            }
-            else
-            {
-                writer.WriteNull("progress");
-            }
-
-            if (info?.DistanceMiles is double miles)
-            {
-                writer.WriteNumber("distanceMiles", Math.Round(miles, 2));
-            }
-            else
-            {
-                writer.WriteNull("distanceMiles");
-            }
-
-            if (rider?.BusNumber is { Length: > 0 } bus)
-            {
-                writer.WriteString("busNumber", bus);
-            }
-            else
-            {
-                writer.WriteNull("busNumber");
-            }
-
-            writer.WriteEndObject();
-        }
-
-        return Encoding.UTF8.GetString(stream.ToArray());
-    }
-
-    private static string StageName(JourneyStage stage) => stage switch
-    {
-        JourneyStage.ToStop => "to_stop",
-        JourneyStage.AtStop => "at_stop",
-        JourneyStage.ToSchool => "to_school",
-        JourneyStage.AtSchool => "at_school",
-        JourneyStage.FromSchool => "from_school",
-        JourneyStage.Home => "home",
-        _ => "idle",
-    };
-
-    private static string BasisName(PredictionBasis? basis) => basis switch
-    {
-        PredictionBasis.Route => "route",
-        PredictionBasis.Approach => "approach",
-        PredictionBasis.Historical => "historical",
-        PredictionBasis.Scheduled => "scheduled",
-        _ => "unknown",
-    };
+        DateTimeOffset now) =>
+        HomeSnapshot.Serialise(rider?.Name, rider?.BusNumber, journey, prediction, info?.DistanceMiles, now);
 }

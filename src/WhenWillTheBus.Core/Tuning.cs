@@ -87,6 +87,27 @@ public static class Tuning
     public const double RecedeHysteresis = 1.15;
 
     /// <summary>
+    /// How close the bus must come before the morning bus counts as having SET
+    /// OFF, which is when the worker starts the card on the phone by itself.
+    /// </summary>
+    /// <remarks>
+    /// The morning bus waits between 3.03 and 3.12 miles out and leaves 8 to 14
+    /// minutes before it reaches the stop: on 7 Oct it read 3.08, 3.07, 2.99,
+    /// then 2.68 a minute later, and arrived eight minutes after that. Inside
+    /// the outer rung by more than a fix wanders while the bus stands still,
+    /// and crossed within a poll of it actually moving.
+    ///
+    /// Cutting this close matters because nobody opens the app on a school
+    /// morning. On 7 Oct the app was opened by hand at 07:48, its card never
+    /// reached the worker, and the only estimate the card ever had was one
+    /// made before the bus had moved.
+    /// </remarks>
+    public const double DepartedMiles = 2.9;
+
+    /// <summary>How long before the bus is due the "time to go" alert is sent.</summary>
+    public static readonly TimeSpan FinalAlertLead = TimeSpan.FromMinutes(5);
+
+    /// <summary>
     /// How far a new estimate must move before the published one follows it,
     /// used ONLY when there is no band to judge against.
     /// </summary>

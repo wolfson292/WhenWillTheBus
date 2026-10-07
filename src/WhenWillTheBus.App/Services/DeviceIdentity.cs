@@ -143,6 +143,10 @@ public static partial class DeviceIdentity
         // sent before the prompt is answered does not clear a token that
         // arrived on an earlier run.
         Field(json, "deviceToken", PushRegistrar.DeviceToken);
+
+        // What lets the worker start the morning card with the app closed.
+        // Null-means-did-not-say, like the device token.
+        Field(json, "startToken", PushRegistrar.StartToken);
         json.Append('}');
         return json.ToString();
     }

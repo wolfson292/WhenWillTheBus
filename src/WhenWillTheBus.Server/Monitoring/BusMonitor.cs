@@ -30,6 +30,7 @@ public sealed class BusMonitor(
     WheresTheBusClient client,
     PredictionEngine engine,
     LiveActivityPublisher publisher,
+    RunAlerter alerter,
     DeviceRegistry registry,
     ClientRegistry clients,
     RequestLog requests,
@@ -196,6 +197,14 @@ public sealed class BusMonitor(
             // the drop-off scans that end the very ride it describes.
             SchoolArrival? school = SchoolArrivalPredictor.Predict(student, now, clock);
             Journey journey = engine.Stage(student, now, prediction, school?.Arrival);
+
+            // BEFORE the publisher, so a card that hears "the bus has set off"
+            // or "aboard, home around 5:30" hears it with the alert rather than
+            // as a silent refresh first. This is what reaches a phone nobody
+            // has opened today, morning or afternoon.
+            await alerter
+                .AlertAsync(student, journey, prediction, info, now, token)
+                .ConfigureAwait(false);
 
             // Deliberately NOT the stale reading: a card claiming a distance
             // and a fix time from half an hour ago is worse than one that

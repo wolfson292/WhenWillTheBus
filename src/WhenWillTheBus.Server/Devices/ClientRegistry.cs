@@ -45,6 +45,19 @@ public sealed record ClientIdentity(
     /// been asked for notification permission and said yes.
     /// </remarks>
     public string? DeviceToken { get; init; }
+
+    /// <summary>
+    /// The phone's PUSH-TO-START token, which lets the worker put a Live
+    /// Activity on the Lock Screen without the app having been opened.
+    /// </summary>
+    /// <remarks>
+    /// A third kind of token, and like the other two it is not interchangeable
+    /// with either: it is issued per APP for one activity TYPE, it is sent to
+    /// the Live Activity topic, and it starts a card rather than updating one.
+    /// Null on a phone older than iOS 17.2, or on a build from before it was
+    /// sent -- and the worker falls back to an ordinary notification then.
+    /// </remarks>
+    public string? StartToken { get; init; }
 }
 
 /// <summary>
@@ -109,6 +122,7 @@ public sealed class ClientRegistry(ILogger<ClientRegistry> logger)
                     // token on a partial hello would silence a phone that is
                     // perfectly reachable.
                     DeviceToken = arriving.DeviceToken ?? existing.DeviceToken,
+                    StartToken = arriving.StartToken ?? existing.StartToken,
                     Label = arriving.Label ?? existing.Label,
                     Model = arriving.Model ?? existing.Model,
                     SystemVersion = arriving.SystemVersion ?? existing.SystemVersion,
@@ -119,6 +133,25 @@ public sealed class ClientRegistry(ILogger<ClientRegistry> logger)
                     Visits = existing.Visits + 1,
                 };
             });
+    }
+
+    /// <summary>
+    /// Stop using a push-to-start token Apple has said is dead.
+    /// </summary>
+    /// <remarks>
+    /// Only the start token: the phone is still there, and still reachable by
+    /// an ordinary notification. It sends a fresh one the next time it opens.
+    /// </remarks>
+    public bool ForgetStartToken(string id)
+    {
+        if (!_clients.TryGetValue(id, out ClientIdentity? client) || client.StartToken is null)
+        {
+            return false;
+        }
+
+        _clients[id] = client with { StartToken = null };
+        logger.LogInformation("Forgot a dead push-to-start token for client {Id}", Short(id));
+        return true;
     }
 
     public int Prune(DateTimeOffset now)
@@ -172,6 +205,7 @@ public sealed class ClientRegistry(ILogger<ClientRegistry> logger)
                     item.TryGetProperty("visits", out JsonElement visits) ? visits.GetInt32() : 1)
                 {
                     DeviceToken = Text(item, "deviceToken"),
+                    StartToken = Text(item, "startToken"),
                 };
             }
         }
@@ -206,6 +240,7 @@ public sealed class ClientRegistry(ILogger<ClientRegistry> logger)
                 writer.WriteString("lastSeen", client.LastSeen.ToString("O", CultureInfo.InvariantCulture));
                 writer.WriteNumber("visits", client.Visits);
                 Write(writer, "deviceToken", client.DeviceToken);
+                Write(writer, "startToken", client.StartToken);
                 writer.WriteEndObject();
             }
 

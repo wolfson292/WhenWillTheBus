@@ -22,7 +22,8 @@ namespace WhenWillTheBus.App.Services;
 /// </remarks>
 public static partial class LiveActivityBridge
 {
-    private static Action<string>? _onToken;
+    private static Action<string, long, string>? _onToken;
+    private static Action<string>? _onStartToken;
 
     [LibraryImport("__Internal")]
     [return: MarshalAs(UnmanagedType.I1)]
@@ -42,6 +43,9 @@ public static partial class LiveActivityBridge
 
     [LibraryImport("__Internal")]
     private static partial void wwtb_set_token_callback(IntPtr callback);
+
+    [LibraryImport("__Internal")]
+    private static partial void wwtb_set_start_token_callback(IntPtr callback);
 
     [LibraryImport("__Internal")]
     [return: MarshalAs(UnmanagedType.I1)]
@@ -65,11 +69,16 @@ public static partial class LiveActivityBridge
     public static bool HasPush => wwtb_activity_has_push();
 
     /// <summary>
-    /// Be told when the activity's push token changes, so it can be re-registered
-    /// with the worker. IT DOES CHANGE, and a worker pushing to a retired token
-    /// fails silently.
+    /// Be told whenever any card's push token arrives or changes, with the
+    /// journey and rider that card belongs to, so it can be registered with the
+    /// worker. IT DOES CHANGE, and a worker pushing to a retired token fails
+    /// silently.
     /// </summary>
-    public static unsafe void OnPushToken(Action<string> handler)
+    /// <remarks>
+    /// Covers cards the WORKER started too: iOS wakes the app in the background
+    /// to hand over a push-started card's token, so this is wired up at launch.
+    /// </remarks>
+    public static unsafe void OnPushToken(Action<string, long, string> handler)
     {
         _onToken = handler;
 
@@ -81,10 +90,17 @@ public static partial class LiveActivityBridge
         // there is nothing to generate it with and the process aborts with
         // SIGABRT. The simulator has a JIT, so it works there -- which is
         // exactly the shape of bug that reaches a device and no further.
-        wwtb_set_token_callback((IntPtr)(delegate* unmanaged<IntPtr, void>)&TokenArrived);
+        wwtb_set_token_callback((IntPtr)(delegate* unmanaged<IntPtr, long, IntPtr, void>)&TokenArrived);
     }
 
-    /// <summary>Called by Swift whenever the activity's push token changes.</summary>
+    /// <summary>Be told this app's push-to-start token, which the worker needs to start a card.</summary>
+    public static unsafe void OnStartToken(Action<string> handler)
+    {
+        _onStartToken = handler;
+        wwtb_set_start_token_callback((IntPtr)(delegate* unmanaged<IntPtr, void>)&StartTokenArrived);
+    }
+
+    /// <summary>Called by Swift whenever a card's push token changes.</summary>
     /// <remarks>
     /// Nothing may be allowed to escape back into Swift: an exception crossing a
     /// native boundary is undefined behaviour, and the failure it produces has
@@ -92,19 +108,37 @@ public static partial class LiveActivityBridge
     /// less than a running app.
     /// </remarks>
     [UnmanagedCallersOnly]
-    private static void TokenArrived(IntPtr token)
+    private static void TokenArrived(IntPtr journeyId, long childId, IntPtr token)
+    {
+        try
+        {
+            string? journey = Marshal.PtrToStringUTF8(journeyId);
+            string? hex = Marshal.PtrToStringUTF8(token);
+            if (!string.IsNullOrEmpty(journey) && !string.IsNullOrEmpty(hex))
+            {
+                _onToken?.Invoke(journey, childId, hex);
+            }
+        }
+        catch (Exception)
+        {
+            // Deliberately swallowed. See above.
+        }
+    }
+
+    [UnmanagedCallersOnly]
+    private static void StartTokenArrived(IntPtr token)
     {
         try
         {
             string? hex = Marshal.PtrToStringUTF8(token);
             if (!string.IsNullOrEmpty(hex))
             {
-                _onToken?.Invoke(hex);
+                _onStartToken?.Invoke(hex);
             }
         }
         catch (Exception)
         {
-            // Deliberately swallowed. See above.
+            // Deliberately swallowed, for the same reason.
         }
     }
 

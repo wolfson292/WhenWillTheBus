@@ -28,6 +28,16 @@ public class AppDelegate : MauiUIApplicationDelegate
     {
         bool started = base.FinishedLaunching(application, launchOptions!);
 
+        // HERE, not on a screen. When the worker starts the morning card by
+        // push, iOS launches the app in the BACKGROUND to hand over that card's
+        // token, and a background launch never shows a page -- so anything
+        // listening only once a page appears would miss the very token that
+        // lets the worker keep the card moving.
+        if (IPlatformApplication.Current?.Services.GetService<ServerLink>() is ServerLink server)
+        {
+            ActivityTokens.Start(server);
+        }
+
         UNUserNotificationCenter.Current.Delegate = new NotificationDelegate();
         UNUserNotificationCenter.Current.RequestAuthorization(
             UNAuthorizationOptions.Alert | UNAuthorizationOptions.Sound,

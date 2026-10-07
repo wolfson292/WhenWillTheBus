@@ -174,3 +174,32 @@ public sealed record BusActivityState : ILiveActivityState
         _ => "scheduled",
     };
 }
+
+/// <summary>
+/// The fixed identity of one journey's card, as a push-to-start carries it.
+/// </summary>
+/// <remarks>
+/// EVERY PROPERTY HERE MUST MATCH <c>BusActivityAttributes</c> in
+/// ios/LiveActivity/BusActivityAttributes.swift, name for name, and the type
+/// name sent beside it must be that struct's name. Only a push-to-start sends
+/// these -- an update carries the content state alone -- so a mismatch here is
+/// a start push Apple accepts with a 200 and the phone silently never shows.
+/// </remarks>
+public sealed record BusActivityIdentity(string JourneyId, string RiderName, string? BusNumber, long ChildId)
+{
+    /// <summary>The Swift struct's name, which a push-to-start must give as <c>attributes-type</c>.</summary>
+    public const string TypeName = "BusActivityAttributes";
+
+    public void Write(Utf8JsonWriter writer)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("journeyId", JourneyId);
+        writer.WriteString("riderName", RiderName);
+
+        // Not optional on the Swift side, where an absent key fails the whole
+        // decode; the phone sends an empty string for the same reason.
+        writer.WriteString("busNumber", BusNumber ?? string.Empty);
+        writer.WriteNumber("childId", ChildId);
+        writer.WriteEndObject();
+    }
+}

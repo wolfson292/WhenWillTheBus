@@ -5,9 +5,10 @@ import WidgetKit
 
 /// The next arrival, on the Home Screen and in the Lock Screen complications.
 ///
-/// Reads the snapshot the app leaves in the shared App Group container. The
+/// Reads the snapshot the app leaves in the shared App Group container, or
+/// asks the worker for the same snapshot when the app has not run lately. The
 /// widget never predicts anything itself -- it wakes, draws and goes away, and
-/// the prediction is a C# engine that needs history and a network.
+/// the prediction is a C# engine that needs history.
 struct BusHomeWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "BusHomeWidget", provider: SnapshotProvider()) { entry in
@@ -45,14 +46,35 @@ struct SnapshotProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<SnapshotEntry>) -> Void) {
-        let entry = SnapshotEntry(date: Date(), snapshot: BusSnapshot.read())
+        Task {
+            // The app's own file while it is running; the worker's answer when
+            // it is not, which on a school day is nearly always.
+            var snapshot = BusSnapshot.read()
+            if snapshot.map({ Date().timeIntervalSince($0.updatedAtDate) > WorkerLink.freshEnough }) ?? true,
+               let fetched = await WorkerLink.fetch() {
+                snapshot = fetched
+            }
 
-        // Re-read in fifteen minutes. The app refreshes the file whenever it
-        // polls and asks WidgetKit to reload, so this is only the floor for a
-        // phone nobody has opened -- asking more often would spend the widget
-        // budget redrawing a number that has not changed.
-        let next = Date().addingTimeInterval(15 * 60)
-        completion(Timeline(entries: [entry], policy: .after(next)))
+            let entry = SnapshotEntry(date: Date(), snapshot: snapshot)
+            completion(Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(Self.wait(for: snapshot)))))
+        }
+    }
+
+    /// How long until the widget asks again.
+    ///
+    /// Often while a run is on, rarely otherwise, because WidgetKit allows a
+    /// widget only a few dozen refreshes a day. The countdown itself is drawn
+    /// by the OS from an instant and keeps ticking between refreshes, so ten
+    /// minutes costs nothing in what the minutes say -- only in how soon a
+    /// moved estimate or a new stage shows up.
+    static func wait(for snapshot: BusSnapshot?) -> TimeInterval {
+        guard let snapshot else { return 60 * 60 }
+
+        // Ten minutes for the five or so hours a day something is happening
+        // or about to, hourly for the rest: about fifty refreshes a day.
+        let underway = snapshot.stage != "idle"
+        let soon = snapshot.targetDate.map { $0.timeIntervalSinceNow < 60 * 60 } ?? false
+        return underway || soon ? 10 * 60 : 60 * 60
     }
 }
 

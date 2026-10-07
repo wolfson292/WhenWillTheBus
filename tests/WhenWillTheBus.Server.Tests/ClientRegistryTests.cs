@@ -139,6 +139,58 @@ public sealed class ClientRegistryTests
         }
     }
 
+    /// <summary>
+    /// The push-to-start token is what lets the worker start the morning card
+    /// with the app closed. Lost on a restart, every phone falls back to a
+    /// plain banner until somebody happens to open the app -- which is the
+    /// whole thing it exists to stop depending on.
+    /// </summary>
+    [Fact]
+    public async Task ARestartKeepsThePushToStartToken()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"wwtb-clients-{Guid.NewGuid():N}.json");
+        try
+        {
+            ClientRegistry before = New();
+            await before.LoadAsync(path);
+            before.Greet(Phone() with { StartToken = "start-1" }, Monday);
+            await before.SaveAsync();
+
+            ClientRegistry after = New();
+            await after.LoadAsync(path);
+
+            Assert.Equal("start-1", Assert.Single(after.All).StartToken);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>A hello from a build that does not send one must not clear the one already known.</summary>
+    [Fact]
+    public void AHelloWithoutAStartTokenKeepsTheOneKnown()
+    {
+        ClientRegistry registry = New();
+        registry.Greet(Phone() with { StartToken = "start-1" }, Monday);
+        registry.Greet(Phone(), Monday.AddHours(1));
+
+        Assert.Equal("start-1", Assert.Single(registry.All).StartToken);
+    }
+
+    [Fact]
+    public void ADeadStartTokenIsForgottenAndThePhoneKept()
+    {
+        ClientRegistry registry = New();
+        registry.Greet(Phone() with { StartToken = "start-1", DeviceToken = "device-1" }, Monday);
+
+        Assert.True(registry.ForgetStartToken("VENDOR-1"));
+
+        ClientIdentity phone = Assert.Single(registry.All);
+        Assert.Null(phone.StartToken);
+        Assert.Equal("device-1", phone.DeviceToken);
+    }
+
     [Fact]
     public async Task AnUnreadableRegistryStartsEmptyRatherThanThrowing()
     {

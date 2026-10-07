@@ -117,6 +117,7 @@ builder.Services.AddSingleton<DeviceRegistry>();
 builder.Services.AddSingleton<ClientRegistry>();
 builder.Services.AddSingleton<ReleaseTracker>();
 builder.Services.AddSingleton<LiveActivityPublisher>();
+builder.Services.AddSingleton<RunAlerter>();
 builder.Services.AddSingleton<BusMonitor>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<BusMonitor>());
 
@@ -349,6 +350,37 @@ app.MapPost("/history/import", async (
 // like everything else.
 app.MapGet("/rider/state", (BusMonitor monitor, PredictionEngine engine, LocalClock clock) =>
     Results.Text(RiderState.Serialise(monitor.Students, engine, clock, clock.Now), "application/json"));
+
+// What the home-screen widget shows, exactly as the app would write it.
+//
+// The app only writes the widget's file while it is running, and on a school
+// day nobody runs it -- on 7 Oct the widget had no status all afternoon while
+// this worker knew the rider was aboard. So the widget asks here itself.
+// Carries no coordinates: a distance, a stage and a time.
+app.MapGet("/widget", (BusMonitor monitor, PredictionEngine engine, LocalClock clock) =>
+{
+    DateTimeOffset now = clock.Now;
+
+    // The first rider, as the worker-fed app shows: the widget has room for one.
+    Student? rider = monitor.Students.Values.FirstOrDefault();
+    if (rider is null)
+    {
+        return Results.NotFound(new { error = "no riders yet" });
+    }
+
+    ArrivalPrediction? prediction = engine.PredictNextArrival(rider, now);
+    SchoolArrival? school = SchoolArrivalPredictor.Predict(rider, now, clock);
+    Journey journey = engine.Stage(rider, now, prediction, school?.Arrival);
+
+    // The last reading only while a journey is on: between runs it is hours
+    // old, and a home screen claiming the bus is 5.8 miles away at bedtime
+    // is worse than one that says nothing about where it is.
+    double? miles = journey.Active ? engine.LatestFor(rider.ChildId)?.DistanceMiles : null;
+
+    return Results.Text(
+        HomeSnapshot.Serialise(rider.Name, rider.BusNumber, journey, prediction, miles, now),
+        "application/json");
+});
 
 // Hand the phone what this worker has learned.
 //
@@ -594,6 +626,10 @@ app.MapPost("/clients/hello", async (
             // Null when the phone has not been granted notification permission,
             // which is a state to keep rather than a value to write over.
             DeviceToken = Trimmed(hello.DeviceToken, 200),
+
+            // The same rule: null is "did not say", and a build from before
+            // push-to-start must not wipe a token a newer one already sent.
+            StartToken = Trimmed(hello.StartToken, 400),
         },
         now);
 
@@ -964,7 +1000,8 @@ internal sealed record ClientHello(
     string? AppVersion,
     string? Build,
     string? Environment,
-    string? DeviceToken);
+    string? DeviceToken,
+    string? StartToken = null);
 
 /// <summary>Where a phone should be sent to install an update.</summary>
 /// <remarks>

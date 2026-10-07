@@ -56,6 +56,45 @@ public static class PushRegistrar
         TokenArrived?.Invoke(token);
     }
 
+    private const string StartTokenKey = "wwtb.push.startToken";
+
+    /// <summary>
+    /// This app's PUSH-TO-START token for the bus card, or null before iOS 17.2
+    /// or before iOS has issued one.
+    /// </summary>
+    /// <remarks>
+    /// A third token, and not interchangeable with either of the others: it
+    /// lets the worker START a card. Remembered across launches for the same
+    /// reason as the device token -- iOS does not re-issue it on every run.
+    /// </remarks>
+    public static string? StartToken
+    {
+        get => Preferences.Get(StartTokenKey, null as string);
+        private set
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                Preferences.Remove(StartTokenKey);
+            }
+            else
+            {
+                Preferences.Set(StartTokenKey, value);
+            }
+        }
+    }
+
+    /// <summary>Remember a push-to-start token. Returns whether it is new, and so worth sending on.</summary>
+    public static bool RememberStartToken(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token) || token == StartToken)
+        {
+            return false;
+        }
+
+        StartToken = token;
+        return true;
+    }
+
     /// <summary>Where a notification asked the app to go, if it did.</summary>
     /// <remarks>
     /// A notification cannot open another app. It opens this one, which then

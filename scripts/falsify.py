@@ -307,6 +307,39 @@ MUTATIONS = [
         test="ARideRunningLateStillCountsAsARide",
         why="a bus running one minute late is read as a ride that already ended",
     ),
+    Mutation(
+        name="a parked bus has not set off",
+        path=CORE / "Notifications" / "RunAlerts.cs",
+        find="|| (distanceMiles is double miles && miles <= Tuning.DepartedMiles)",
+        replace="|| distanceMiles is not null",
+        test="ParkedBus_HasNotSetOff",
+        why="the morning card starts at 07:16 while the bus is still waiting at three miles",
+    ),
+    Mutation(
+        name="five minutes out implies departure",
+        path=CORE / "Notifications" / "RunAlerts.cs",
+        find="""            || (distanceMiles is double miles && miles <= Tuning.DepartedMiles)
+            || finalDue;""",
+        replace="""            || (distanceMiles is double miles && miles <= Tuning.DepartedMiles);""",
+        test="FiveMinutesWithNoFix_StartsTheCardToo",
+        why="a morning without GPS says five minutes to a phone with no card on it",
+    ),
+    Mutation(
+        name="each run alert is sent once",
+        path=CORE / "Notifications" / "RunAlerts.cs",
+        find="if (underway && !sent.HasFlag(RunAlert.Started))",
+        replace="if (underway)",
+        test="Departure_IsSaidOnce",
+        why="the phone buzzes every thirty seconds from departure until the bus arrives",
+    ),
+    Mutation(
+        name="boarding at school starts the ride home",
+        path=CORE / "Notifications" / "RunAlerts.cs",
+        find="bool underway = afternoon",
+        replace="bool underway = false",
+        test="BoardingAtSchool_StartsTheRideHome",
+        why="the afternoon card waits for the five-minute mark, an hour after she boarded",
+    ),
 ]
 
 

@@ -99,6 +99,10 @@ public sealed class BusService : INotifyPropertyChanged
         WheresTheBusCredentials? credentials = await _credentials.ReadAsync();
         (string Url, string Key)? worker = await _credentials.ReadServerAsync();
 
+        // So the home-screen widget can ask the worker itself while this app
+        // is not running -- which is most of every school day.
+        WidgetSnapshot.WriteWorkerLink(worker);
+
         // WORKER-FED: no WheresTheBus account on this phone at all.
         //
         // The worker already polls, predicts and knows everything; a second
@@ -120,26 +124,9 @@ public sealed class BusService : INotifyPropertyChanged
 
         await LoadHistoryAsync();
 
-        LiveActivityBridge.OnPushToken(token =>
-        {
-            // Fire and forget, and swallow: this runs from a native callback,
-            // and a worker that cannot be reached is a degraded card, not a
-            // reason to take the app down.
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    if (_activityJourneyId is string journeyId && Rider is not null)
-                    {
-                        await _server.RegisterAsync(journeyId, Rider.ChildId, token);
-                    }
-                }
-                catch (Exception)
-                {
-                    // The card still works locally; see LiveActivityIsLocalOnly.
-                }
-            });
-        });
+        // Card tokens are listened for from launch -- see ActivityTokens --
+        // because a card the worker starts hands its token over in a
+        // background launch that never reaches this method.
 
         _polling?.Cancel();
         _polling = new CancellationTokenSource();
@@ -216,6 +203,10 @@ public sealed class BusService : INotifyPropertyChanged
             _saidHelloAt = now;
             _ = await _server.HelloAsync(token);
         }
+
+        // A card the worker cannot update is the 7 Oct morning, so a token
+        // that has not reached it yet is retried on every poll until it has.
+        await ActivityTokens.RetryAsync(token);
 
         if (_workerFed)
         {

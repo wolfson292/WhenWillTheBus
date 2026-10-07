@@ -70,8 +70,10 @@ public sealed class ApnsClient(
         DateTimeOffset? staleAfter = null,
         (string Title, string Body)? alert = null,
         bool? sandbox = null,
-        CancellationToken cancellationToken = default) =>
-        SendAsync(deviceToken, "update", contentState, urgency, staleAfter, alert, null, sandbox, cancellationToken);
+        CancellationToken cancellationToken = default,
+        bool sound = false) =>
+        SendAsync(
+            deviceToken, "update", contentState, urgency, staleAfter, alert, null, sandbox, cancellationToken, sound);
 
     /// <summary>End a Live Activity.</summary>
     /// <param name="dismissAt">
@@ -96,6 +98,42 @@ public sealed class ApnsClient(
         CancellationToken cancellationToken = default) =>
         SendAsync(
             deviceToken, "end", contentState, PushUrgency.TimeSensitive, null, null, dismissAt, sandbox,
+            cancellationToken);
+
+    /// <summary>Put a Live Activity on a phone's Lock Screen without the app.</summary>
+    /// <param name="startToken">
+    /// The phone's PUSH-TO-START token: one per app per activity type, from
+    /// <c>Activity.pushToStartTokenUpdates</c>. Not an activity's token and not
+    /// the device's.
+    /// </param>
+    /// <remarks>
+    /// THE CARD THIS STARTS CANNOT BE UPDATED UNTIL THE PHONE SAYS SO. iOS gives
+    /// the new activity its own update token and wakes the app in the
+    /// background to hand it over; the app then registers it like any other,
+    /// and from there the publisher keeps it moving. Until that lands this
+    /// card shows what it was started with -- which is why it is only sent at
+    /// the moment the bus sets off, when what it starts with is the best
+    /// estimate of the morning so far rather than the worst.
+    ///
+    /// An alert is REQUIRED on a start, and sound is asked for explicitly:
+    /// this is the push that replaces somebody opening the app.
+    /// </remarks>
+    public Task<PushResult> StartAsync(
+        string startToken,
+        BusActivityIdentity identity,
+        ILiveActivityState contentState,
+        (string Title, string Body) alert,
+        DateTimeOffset? staleAfter = null,
+        bool? sandbox = null,
+        CancellationToken cancellationToken = default) =>
+        PostAsync(
+            startToken,
+            BuildPayload("start", contentState, staleAfter, alert, null, identity, sound: true),
+            _options.LiveActivityTopic,
+            "liveactivity",
+            "10",
+            sandbox,
+            "start",
             cancellationToken);
 
     /// <summary>
@@ -147,10 +185,11 @@ public sealed class ApnsClient(
         (string Title, string Body)? alert,
         DateTimeOffset? dismissAt,
         bool? sandbox,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken,
+        bool sound = false) =>
         PostAsync(
             deviceToken,
-            BuildPayload(eventName, contentState, staleAfter, alert, dismissAt),
+            BuildPayload(eventName, contentState, staleAfter, alert, dismissAt, sound: sound),
             _options.LiveActivityTopic,
             "liveactivity",
 
@@ -228,12 +267,15 @@ public sealed class ApnsClient(
         }
     }
 
-    private static string BuildPayload(
+    /// <summary>The Live Activity payload. Public so its shape can be pinned by a test.</summary>
+    public static string BuildPayload(
         string eventName,
         ILiveActivityState contentState,
         DateTimeOffset? staleAfter,
         (string Title, string Body)? alert,
-        DateTimeOffset? dismissAt)
+        DateTimeOffset? dismissAt,
+        BusActivityIdentity? identity = null,
+        bool sound = false)
     {
         using MemoryStream stream = new();
         using (Utf8JsonWriter writer = new(stream))
@@ -262,7 +304,21 @@ public sealed class ApnsClient(
                 writer.WriteStartObject("alert");
                 writer.WriteString("title", alert.Value.Title);
                 writer.WriteString("body", alert.Value.Body);
+                if (sound)
+                {
+                    writer.WriteString("sound", "default");
+                }
+
                 writer.WriteEndObject();
+            }
+
+            // Only a start carries the identity. An update addresses a card
+            // that already has one, and iOS ignores these keys on it.
+            if (identity is not null)
+            {
+                writer.WriteString("attributes-type", BusActivityIdentity.TypeName);
+                writer.WritePropertyName("attributes");
+                identity.Write(writer);
             }
 
             writer.WritePropertyName("content-state");
