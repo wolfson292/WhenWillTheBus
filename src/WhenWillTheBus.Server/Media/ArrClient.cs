@@ -141,6 +141,36 @@ public sealed class ArrClient(HttpClient http, IOptions<MediaOptions> options, I
         return new AddOutcome(false, detail);
     }
 
+    /// <summary>
+    /// How much of something has landed, or null when that cannot be told:
+    /// not configured, not reachable, or not in the library at all.
+    /// </summary>
+    /// <remarks>
+    /// Asked by the same identifier the request carries, so nothing of the
+    /// instance's own ids has to be remembered. A film is ready when it has a
+    /// file. A series is "complete" when every episode the instance is meant
+    /// to fetch has one -- percentOfEpisodes, Sonarr's own figure, so a series
+    /// still airing is complete once it has caught up rather than never.
+    /// </remarks>
+    public async Task<Readiness?> ReadinessAsync(MediaKind kind, long remoteId, CancellationToken token = default)
+    {
+        ArrOptions arr = For(kind);
+        if (!arr.Configured)
+        {
+            return null;
+        }
+
+        string query = kind is MediaKind.Movie ? $"movie?tmdbId={remoteId}" : $"series?tvdbId={remoteId}";
+        using JsonDocument? found = await GetAsync(arr, query, token).ConfigureAwait(false);
+        if (found is null || found.RootElement.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        JsonElement item = found.RootElement.EnumerateArray().FirstOrDefault();
+        return item.ValueKind == JsonValueKind.Object ? ArrPayload.ReadinessOf(kind, item) : null;
+    }
+
     private ArrOptions For(MediaKind kind) => kind is MediaKind.Movie ? _options.Radarr : _options.Sonarr;
 
     private static string Name(MediaKind kind) => kind is MediaKind.Movie ? "Radarr" : "Sonarr";

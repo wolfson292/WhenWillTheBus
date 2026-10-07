@@ -92,4 +92,26 @@ public static class ArrPayload
 
     private static string Clip(string text, int limit) =>
         text.Length <= limit ? text : text[..limit] + "\u2026";
+
+    /// <summary>Read how much of a library item has a file. Pure, so both shapes can be pinned by a test.</summary>
+    public static Readiness ReadinessOf(MediaKind kind, JsonElement item)
+    {
+        if (kind is MediaKind.Movie)
+        {
+            bool has = item.Bool("hasFile");
+            return new Readiness(has ? 1 : 0, has);
+        }
+
+        JsonElement statistics = item.Property("statistics") ?? default;
+        int files = statistics.ValueKind == JsonValueKind.Object
+            ? (int)(statistics.Long("episodeFileCount") ?? 0)
+            : 0;
+        double percent = statistics.ValueKind == JsonValueKind.Object
+            ? statistics.Double("percentOfEpisodes") ?? 0
+            : 0;
+
+        // A series with nothing monitored reads 0% with no files; one with
+        // files and 100% is caught up with everything it is meant to have.
+        return new Readiness(files, files > 0 && percent >= 100);
+    }
 }

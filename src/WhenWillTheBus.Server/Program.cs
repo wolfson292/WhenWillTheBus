@@ -120,6 +120,8 @@ builder.Services.AddSingleton<LiveActivityPublisher>();
 builder.Services.AddSingleton<RunAlerter>();
 builder.Services.AddSingleton<BusMonitor>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<BusMonitor>());
+builder.Services.AddSingleton<ReadyWatcher>();
+builder.Services.AddHostedService(provider => provider.GetRequiredService<ReadyWatcher>());
 
 DateTimeOffset started = DateTimeOffset.UtcNow;
 
@@ -714,7 +716,16 @@ app.MapPost("/media/request", async (
     // WHO ASKED comes from the phone that asked, not from the body: the client
     // identifier is one a phone has already proved by using it, and a name in
     // a request body is whatever the sender felt like typing.
-    string? who = clients.Find(ask.ClientId)?.Label;
+    ClientIdentity? asker = clients.Find(ask.ClientId);
+
+    // WHO IT IS FOR, the same way: only a phone this worker already knows can
+    // be named, so a request cannot send a notification to a stranger. Asking
+    // for yourself is the same as naming nobody.
+    ClientIdentity? recipient = clients.Find(ask.ForClientId);
+    if (recipient is not null && recipient.Id == asker?.Id)
+    {
+        recipient = null;
+    }
 
     log.Record(new MediaRequest(
         kind,
@@ -722,9 +733,14 @@ app.MapPost("/media/request", async (
         ask.Year,
         ask.RemoteId,
         ask.PosterUrl,
-        who,
+        asker?.Label,
         clock.Now,
-        outcome.Outcome));
+        outcome.Outcome)
+    {
+        RequestedById = asker?.Id,
+        ForId = recipient?.Id,
+        RequestedFor = recipient?.Label,
+    });
 
     await log.SaveAsync(token);
     return Results.Ok(new { added = outcome.Added, outcome = outcome.Outcome });
@@ -924,9 +940,19 @@ app.MapGet("/media/requests", (RequestLog log) => Results.Ok(log.Recent().Select
     request.Year,
     request.PosterUrl,
     request.RequestedBy,
+    request.RequestedFor,
     request.RequestedAt,
     request.Outcome,
+    request.StartedAt,
+    request.ReadyAt,
 })));
+
+// The phones a request can be FOR: the ones somebody has named, because a
+// list of "iPhone19,2" is no use to a person choosing. Ids and names only --
+// enough to pick from, nothing about the phones themselves.
+app.MapGet("/family", (ClientRegistry clients) => Results.Ok(clients.All
+    .Where(client => client.Label is not null)
+    .Select(client => new { client.Id, client.Label })));
 
 // The management page. A browser reaches it with Basic auth; everything on it
 // is also available as JSON from /status, /rider/state and /clients.
@@ -1065,7 +1091,8 @@ internal sealed record BuildAnnouncement(string Build, bool Notify = true, strin
 /// itself says about that identifier.
 /// </remarks>
 internal sealed record MediaAsk(
-    string? Kind, long RemoteId, string? Title, int? Year, string? PosterUrl, string? ClientId);
+    string? Kind, long RemoteId, string? Title, int? Year, string? PosterUrl, string? ClientId,
+    string? ForClientId = null);
 
 /// <summary>What a phone sends after starting a Live Activity.</summary>
 /// <param name="Environment">"sandbox" or "production"; sandbox when a build did not say.</param>

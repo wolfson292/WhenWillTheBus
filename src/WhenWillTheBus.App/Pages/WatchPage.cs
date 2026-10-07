@@ -337,12 +337,31 @@ public sealed class WatchPage : ContentPage
             TapGestureRecognizer tap = new();
             tap.Tapped += async (_, _) =>
             {
+                // WHOSE IS IT? Asked only when there is somebody else to name;
+                // a household of one phone taps and gets what it tapped. The
+                // phone it is for is the one told when it is ready to watch.
+                Recipient? forPhone = null;
+                IReadOnlyList<Recipient> family = await _media.RecipientsAsync();
+                if (family.Count > 0)
+                {
+                    const string Me = "Me";
+                    string? choice = await DisplayActionSheetAsync(
+                        "Who is this for?", "Cancel", null, [Me, .. family.Select(phone => phone.Label)]);
+
+                    if (choice is null or "Cancel")
+                    {
+                        return;
+                    }
+
+                    forPhone = family.FirstOrDefault(phone => phone.Label == choice);
+                }
+
                 card.Opacity = 0.5;
                 outcome.IsVisible = true;
                 outcome.Text = "Asking…";
                 outcome.TextColor = Theme.TextDim;
 
-                string said = await _media.RequestAsync(result);
+                string said = await _media.RequestAsync(result, forPhone);
 
                 card.Opacity = 1;
                 outcome.Text = said;
@@ -381,18 +400,26 @@ public sealed class WatchPage : ContentPage
                 new Label
                 {
                     // WHO asked is the point of showing this at all. A download
-                    // queue says what; a family app says who.
-                    Text = request.RequestedBy is string who
-                        ? $"{who} · {When(request.RequestedAt)}"
-                        : When(request.RequestedAt),
+                    // queue says what; a family app says who -- and for whom.
+                    Text = string.Join(" · ", new[]
+                    {
+                        request.RequestedBy,
+                        request.RequestedFor is string whose ? $"for {whose}" : null,
+                        When(request.RequestedAt),
+                    }.Where(part => part is not null)),
                     FontSize = 11,
                     TextColor = Theme.TextDim,
                 },
                 new Label
                 {
-                    Text = request.Outcome,
+                    // Once it can be watched, that is the only thing worth saying.
+                    Text = request.Ready
+                        ? "Ready to watch"
+                        : request.Started
+                            ? "Starting to arrive"
+                            : request.Outcome,
                     FontSize = 11,
-                    TextColor = request.Outcome.StartsWith("Added", StringComparison.Ordinal)
+                    TextColor = request.Ready || request.Started || request.Outcome.StartsWith("Added", StringComparison.Ordinal)
                         ? Theme.Aboard
                         : Theme.TextDim,
                 },

@@ -31,7 +31,20 @@ public sealed record WatchRequest(
     string? PosterUrl,
     string? RequestedBy,
     DateTimeOffset RequestedAt,
-    string Outcome);
+    string Outcome)
+{
+    /// <summary>Whose it is, when somebody asked on their behalf.</summary>
+    public string? RequestedFor { get; init; }
+
+    /// <summary>A series' first episodes can be watched.</summary>
+    public bool Started { get; init; }
+
+    /// <summary>All of it can be watched.</summary>
+    public bool Ready { get; init; }
+}
+
+/// <summary>A phone in the family, as somebody named it, that a request can be for.</summary>
+public sealed record Recipient(string Id, string Label);
 
 /// <summary>
 /// Searching for and asking for things to watch.
@@ -80,8 +93,40 @@ public sealed class MediaClient(HttpClient http, CredentialStore credentials)
         }
     }
 
+    /// <summary>
+    /// The OTHER named phones in the family -- who something can be asked for.
+    /// Empty when this phone is the only one, and then nobody is asked.
+    /// </summary>
+    public async Task<IReadOnlyList<Recipient>> RecipientsAsync(CancellationToken cancellationToken = default)
+    {
+        string? body = await GetAsync("/family", cancellationToken);
+        if (body is null)
+        {
+            return [];
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(body);
+            return document.RootElement.EnumerateArray()
+                .Select(item => (Id: item.String("id"), Label: item.String("label")))
+                .Where(phone => phone.Id is not null && phone.Label is not null && phone.Id != DeviceIdentity.VendorId)
+                .Select(phone => new Recipient(phone.Id!, phone.Label!))
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
     /// <summary>Ask for something. Returns what to tell the person who asked.</summary>
-    public async Task<string> RequestAsync(WatchResult item, CancellationToken cancellationToken = default)
+    /// <param name="forPhone">
+    /// Whose it is, when not this phone's. That phone is told when it is
+    /// ready to watch, rather than this one.
+    /// </param>
+    public async Task<string> RequestAsync(
+        WatchResult item, Recipient? forPhone = null, CancellationToken cancellationToken = default)
     {
         (string Url, string Key)? server = await credentials.ReadServerAsync();
         if (server is null)
@@ -109,6 +154,11 @@ public sealed class MediaClient(HttpClient http, CredentialStore credentials)
         if (DeviceIdentity.VendorId is string id)
         {
             json.Append(",\"clientId\":").Append(JsonSerializer.Serialize(id));
+        }
+
+        if (forPhone is not null)
+        {
+            json.Append(",\"forClientId\":").Append(JsonSerializer.Serialize(forPhone.Id));
         }
 
         json.Append('}');
@@ -163,7 +213,12 @@ public sealed class MediaClient(HttpClient http, CredentialStore credentials)
                     item.String("posterUrl"),
                     item.String("requestedBy"),
                     at,
-                    item.String("outcome") ?? string.Empty));
+                    item.String("outcome") ?? string.Empty)
+                {
+                    RequestedFor = item.String("requestedFor"),
+                    Started = item.String("startedAt") is not null,
+                    Ready = item.String("readyAt") is not null,
+                });
             }
 
             return requests;

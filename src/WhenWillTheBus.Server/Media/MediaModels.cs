@@ -39,7 +39,34 @@ public sealed record MediaRequest(
     string? PosterUrl,
     string? RequestedBy,
     DateTimeOffset RequestedAt,
-    string Outcome);
+    string Outcome)
+{
+    /// <summary>The phone that asked, by its vendor id. Who to tell when nobody else was named.</summary>
+    public string? RequestedById { get; init; }
+
+    /// <summary>The phone it was asked for, when that is not the one that asked.</summary>
+    public string? ForId { get; init; }
+
+    /// <summary>That phone's name at the time, for the list.</summary>
+    public string? RequestedFor { get; init; }
+
+    /// <summary>A series' first episodes arrived and were announced.</summary>
+    public DateTimeOffset? StartedAt { get; init; }
+
+    /// <summary>All of it arrived and was announced. Nothing more is checked after this.</summary>
+    public DateTimeOffset? ReadyAt { get; init; }
+
+    /// <summary>Who hears that it is ready: whoever it was for, else whoever asked.</summary>
+    public string? RecipientId => ForId ?? RequestedById;
+}
+
+/// <summary>How much of something has actually landed in the library.</summary>
+/// <param name="Files">Films: 1 or 0. Series: episode files on disk.</param>
+/// <param name="Complete">Everything the instance is meant to fetch is there.</param>
+public sealed record Readiness(int Files, bool Complete)
+{
+    public bool Any => Files > 0;
+}
 
 /// <summary>What came of trying to add something.</summary>
 /// <param name="Outcome">
