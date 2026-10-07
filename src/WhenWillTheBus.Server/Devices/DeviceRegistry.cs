@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
+using WhenWillTheBus.Core.Storage;
 
 namespace WhenWillTheBus.Server.Devices;
 
@@ -175,7 +176,28 @@ public sealed class DeviceRegistry(ILogger<DeviceRegistry> logger)
         }
     }
 
+    /// <summary>One save at a time.</summary>
+    /// <remarks>
+    /// Phones call in concurrently -- one sent two hellos in the same second on
+    /// 7 Oct -- and two saves overlapping can each snapshot the registry and
+    /// then land in either order, putting the OLDER one on disk last.
+    /// </remarks>
+    private readonly SemaphoreSlim _saving = new(1, 1);
+
     public async Task SaveAsync(CancellationToken token = default)
+    {
+        await _saving.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            await WriteAsync(token).ConfigureAwait(false);
+        }
+        finally
+        {
+            _saving.Release();
+        }
+    }
+
+    private async Task WriteAsync(CancellationToken token)
     {
         if (_path is null)
         {
@@ -206,14 +228,6 @@ public sealed class DeviceRegistry(ILogger<DeviceRegistry> logger)
             writer.WriteEndArray();
         }
 
-        string? directory = Path.GetDirectoryName(_path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        string temporary = _path + ".tmp";
-        await File.WriteAllBytesAsync(temporary, stream.ToArray(), token).ConfigureAwait(false);
-        File.Move(temporary, _path, overwrite: true);
+        await AtomicFile.WriteAsync(_path, stream.ToArray(), token).ConfigureAwait(false);
     }
 }

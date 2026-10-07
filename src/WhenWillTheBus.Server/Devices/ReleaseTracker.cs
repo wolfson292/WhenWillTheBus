@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using WhenWillTheBus.Core.Storage;
 
 namespace WhenWillTheBus.Server.Devices;
 
@@ -96,14 +97,6 @@ public sealed class ReleaseTracker(ILogger<ReleaseTracker> logger)
             writer.WriteEndObject();
         }
 
-        string? directory = Path.GetDirectoryName(_path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        string temporary = _path + ".tmp";
-        await File.WriteAllBytesAsync(temporary, stream.ToArray(), token).ConfigureAwait(false);
-        File.Move(temporary, _path, overwrite: true);
+        await AtomicFile.WriteAsync(_path, stream.ToArray(), token).ConfigureAwait(false);
     }
 }

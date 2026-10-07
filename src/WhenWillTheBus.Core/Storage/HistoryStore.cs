@@ -109,18 +109,10 @@ public static class HistoryStore
 
     public static async Task SaveAsync(string path, IEnumerable<StoredRider> riders, CancellationToken token = default)
     {
-        string? directory = Path.GetDirectoryName(path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        // Write beside the target and move into place, so a crash or a killed
-        // app cannot leave a half-written history behind. Losing a fortnight of
-        // learned journeys to a torn write would cost six weeks to rebuild.
-        string temporary = path + ".tmp";
-        await File.WriteAllTextAsync(temporary, Serialise(riders), token).ConfigureAwait(false);
-        File.Move(temporary, path, overwrite: true);
+        // Never torn: losing a fortnight of learned journeys to a half-written
+        // file would cost six weeks to rebuild.
+        await AtomicFile.WriteAsync(path, System.Text.Encoding.UTF8.GetBytes(Serialise(riders)), token)
+            .ConfigureAwait(false);
     }
 
     public static async Task<IReadOnlyList<StoredRider>> LoadAsync(string path, CancellationToken token = default)

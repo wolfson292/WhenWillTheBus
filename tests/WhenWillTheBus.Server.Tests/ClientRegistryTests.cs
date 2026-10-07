@@ -191,6 +191,33 @@ public sealed class ClientRegistryTests
         Assert.Equal("device-1", phone.DeviceToken);
     }
 
+    /// <summary>
+    /// On 7 Oct a phone sent two hellos in the same second; both saves shared
+    /// one temporary file, and the second failed the request with a 500.
+    /// </summary>
+    [Fact]
+    public async Task SavesAtTheSameTimeAllSucceed()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"wwtb-clients-{Guid.NewGuid():N}.json");
+        try
+        {
+            ClientRegistry registry = New();
+            await registry.LoadAsync(path);
+            registry.Greet(Phone() with { StartToken = "start-1" }, Monday);
+
+            await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => Task.Run(() => registry.SaveAsync())));
+
+            ClientRegistry after = New();
+            await after.LoadAsync(path);
+            Assert.Equal("start-1", Assert.Single(after.All).StartToken);
+            Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(path)!, Path.GetFileName(path) + ".*.tmp"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public async Task AnUnreadableRegistryStartsEmptyRatherThanThrowing()
     {

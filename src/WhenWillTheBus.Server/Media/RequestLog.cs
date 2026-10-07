@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 using WhenWillTheBus.Core.Api;
+using WhenWillTheBus.Core.Storage;
 
 namespace WhenWillTheBus.Server.Media;
 
@@ -126,14 +127,6 @@ public sealed class RequestLog(ILogger<RequestLog> logger)
             writer.WriteEndArray();
         }
 
-        string? directory = Path.GetDirectoryName(_path);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-
-        string temporary = _path + ".tmp";
-        await File.WriteAllBytesAsync(temporary, stream.ToArray(), token).ConfigureAwait(false);
-        File.Move(temporary, _path, overwrite: true);
+        await AtomicFile.WriteAsync(_path, stream.ToArray(), token).ConfigureAwait(false);
     }
 }
