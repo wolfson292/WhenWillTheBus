@@ -74,3 +74,7 @@ public sealed record Readiness(int Files, bool Complete)
 /// library", or what went wrong.
 /// </param>
 public sealed record AddOutcome(bool Added, string Outcome);
+
+/// <summary>What the library holds for one title.</summary>
+/// <param name="TitleSlug">The instance's own slug, which is what its web pages are addressed by.</param>
+public sealed record LibraryEntry(Readiness Readiness, string? TitleSlug);

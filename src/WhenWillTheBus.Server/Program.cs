@@ -111,6 +111,7 @@ builder.Services.AddHttpClient<ArrClient>(http => http.Timeout = TimeSpan.FromSe
 // each sets its own.
 builder.Services.AddHttpClient<MovieNightClient>(http => http.Timeout = Timeout.InfiniteTimeSpan);
 builder.Services.AddSingleton<RequestLog>();
+builder.Services.AddSingleton<LibraryStatus>();
 builder.Services.AddSingleton<SuggestionThrottle>();
 
 builder.Services.AddSingleton<DeviceRegistry>();
@@ -968,15 +969,43 @@ app.MapGet("/family", (ClientRegistry clients) => Results.Ok(clients.All
 
 // The management page. A browser reaches it with Basic auth; everything on it
 // is also available as JSON from /status, /rider/state and /clients.
-app.MapGet("/manage", (
+app.MapGet("/manage", async (
+    HttpRequest request,
     BusMonitor monitor,
     PredictionEngine engine,
     ClientRegistry clients,
     DeviceRegistry registry,
-    LocalClock clock) => Results.Content(
+    RequestLog log,
+    LibraryStatus library,
+    ArrClient arr,
+    LocalClock clock,
+    CancellationToken token) =>
+{
+    DateTimeOffset now = clock.Now;
+
+    // Every request the log holds, newest first, each with what the library
+    // says about it and a link to where it can be looked at.
+    IReadOnlyList<MediaRequest> asked = log.Recent(int.MaxValue);
+    IReadOnlyDictionary<(MediaKind, long), TitleStatus> held = await library.ForAsync(asked, now, token);
+
+    string? proto = request.Headers["X-Forwarded-Proto"].FirstOrDefault();
+    string? host = request.Headers["X-Forwarded-Host"].FirstOrDefault();
+
+    List<RequestRow> rows = asked
+        .Select(media =>
+        {
+            TitleStatus status = held[(media.Kind, media.RemoteId)];
+            string? link = ArrLinks.For(
+                arr.OptionsFor(media.Kind), media.Kind, media.RemoteId, status.Entry?.TitleSlug, proto, host);
+            return new RequestRow(media, status, link);
+        })
+        .ToList();
+
+    return Results.Content(
         ManagementPage.Render(
-            monitor.Students, engine, clients.All, registry.All, clock, started, clock.Now),
-        "text/html; charset=utf-8"));
+            monitor.Students, engine, clients.All, registry.All, clock, started, now, rows),
+        "text/html; charset=utf-8");
+});
 
 // What the worker knows, WITHOUT coordinates. A status page is a convenience;
 // leaking a child's position into one would not be.

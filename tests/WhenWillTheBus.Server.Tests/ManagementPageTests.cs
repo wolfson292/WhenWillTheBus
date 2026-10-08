@@ -5,6 +5,7 @@ using WhenWillTheBus.Core.Model;
 using WhenWillTheBus.Core.Prediction;
 using WhenWillTheBus.Server.Api;
 using WhenWillTheBus.Server.Devices;
+using WhenWillTheBus.Server.Media;
 
 namespace WhenWillTheBus.Server.Tests;
 
@@ -16,7 +17,8 @@ public sealed class ManagementPageTests
     private static string Render(
         IReadOnlyList<ClientIdentity>? clients = null,
         IReadOnlyCollection<RegisteredActivity>? activities = null,
-        Student? student = null)
+        Student? student = null,
+        IReadOnlyList<RequestRow>? requests = null)
     {
         Dictionary<long, Student> students = [];
         if (student is not null)
@@ -31,7 +33,8 @@ public sealed class ManagementPageTests
             activities ?? [],
             Clock,
             Now.AddHours(-3),
-            Now);
+            Now,
+            requests);
     }
 
     private static ClientIdentity Phone(string? label) =>
@@ -150,5 +153,51 @@ public sealed class ManagementPageTests
         // about a child's whereabouts was opened.
         Assert.DoesNotContain("http://", html, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("https://", html, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static RequestRow Asked(
+        string title,
+        TitleStatus status,
+        string? link = "https://nas.denlair.com/radarr/movie/x",
+        string outcome = "Added — it will start downloading.") =>
+        new(
+            new MediaRequest(MediaKind.Movie, title, 2017, 346648, null, "Scott's Phone", Now.AddHours(-1), outcome)
+            {
+                RequestedFor = "Angela iPhone 18",
+            },
+            status,
+            link);
+
+    [Fact]
+    public void Requests_SayWhoAskedForWhomAndWhetherItArrived()
+    {
+        string html = Render(requests:
+        [
+            Asked("Paddington 2", new TitleStatus(true, new LibraryEntry(new Readiness(1, true), "paddington-2"))),
+            Asked("Wonka", new TitleStatus(true, new LibraryEntry(new Readiness(0, false), "wonka"))),
+            Asked("Gone Missing", new TitleStatus(true, null)),
+            Asked("Unreachable", new TitleStatus(false, null), link: null),
+        ]);
+
+        Assert.Contains("Scott&#39;s Phone", html);
+        Assert.Contains("Angela iPhone 18", html);
+        Assert.Contains("Downloaded", html);
+        Assert.Contains("Not downloaded yet", html);
+        Assert.Contains("Not in the library", html);
+        Assert.Contains("Couldn&#39;t check", html);
+        Assert.Contains("href=\"https://nas.denlair.com/radarr/movie/x\"", html);
+    }
+
+    /// <summary>A title is typed into a search on somebody's phone. It is untrusted like a label is.</summary>
+    [Fact]
+    public void ARequestedTitle_IsEscaped()
+    {
+        string html = Render(requests:
+        [
+            Asked("<img src=x onerror=alert(1)>", new TitleStatus(true, null)),
+        ]);
+
+        Assert.DoesNotContain("<img src=x", html);
+        Assert.Contains("&lt;img src=x onerror=alert(1)&gt;", html);
     }
 }

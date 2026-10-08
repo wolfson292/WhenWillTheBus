@@ -152,7 +152,15 @@ public sealed class ArrClient(HttpClient http, IOptions<MediaOptions> options, I
     /// to fetch has one -- percentOfEpisodes, Sonarr's own figure, so a series
     /// still airing is complete once it has caught up rather than never.
     /// </remarks>
-    public async Task<Readiness?> ReadinessAsync(MediaKind kind, long remoteId, CancellationToken token = default)
+    public async Task<Readiness?> ReadinessAsync(MediaKind kind, long remoteId, CancellationToken token = default) =>
+        (await LookupAsync(kind, remoteId, token).ConfigureAwait(false))?.Entry?.Readiness;
+
+    /// <summary>
+    /// What the library holds for a title. Null when the instance could not be
+    /// asked; an Entry of null when it was asked and does not have it.
+    /// </summary>
+    public async Task<(LibraryEntry? Entry, bool Asked)?> LookupAsync(
+        MediaKind kind, long remoteId, CancellationToken token = default)
     {
         ArrOptions arr = For(kind);
         if (!arr.Configured)
@@ -168,8 +176,13 @@ public sealed class ArrClient(HttpClient http, IOptions<MediaOptions> options, I
         }
 
         JsonElement item = found.RootElement.EnumerateArray().FirstOrDefault();
-        return item.ValueKind == JsonValueKind.Object ? ArrPayload.ReadinessOf(kind, item) : null;
+        return item.ValueKind == JsonValueKind.Object
+            ? (new LibraryEntry(ArrPayload.ReadinessOf(kind, item), item.String("titleSlug")), true)
+            : (null, true);
     }
+
+    /// <summary>The instance's settings, for building links to it.</summary>
+    public ArrOptions OptionsFor(MediaKind kind) => For(kind);
 
     private ArrOptions For(MediaKind kind) => kind is MediaKind.Movie ? _options.Radarr : _options.Sonarr;
 

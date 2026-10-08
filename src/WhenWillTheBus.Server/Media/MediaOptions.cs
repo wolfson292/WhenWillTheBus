@@ -29,6 +29,18 @@ public sealed class ArrOptions
     /// </remarks>
     public int? QualityProfileId { get; set; }
 
+    /// <summary>
+    /// Where a PERSON reaches this instance, for links on the status page,
+    /// e.g. https://nas.denlair.com/radarr. Optional.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Url"/> is where the WORKER reaches it -- a LAN address with a
+    /// port, which works from a browser at home and nowhere else. Left blank, a
+    /// page opened through the reverse proxy links to the same site it was
+    /// opened on, under <see cref="Url"/>'s path; see <see cref="ArrLinks"/>.
+    /// </remarks>
+    public string? LinkUrl { get; set; }
+
     public bool Configured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
 }
 
