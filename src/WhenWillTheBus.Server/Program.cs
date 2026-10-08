@@ -172,6 +172,18 @@ app.Use(async (context, next) =>
         return;
     }
 
+    // THE ROOT IS FOR A PERSON WITH A BROWSER, and there is nothing here but
+    // the management page. Without this, https://nas.denlair.com/worker/ was a
+    // bare 401 with no challenge -- a blank page, with no hint that /manage
+    // exists or that it would ask for the key. RELATIVE, so it lands on
+    // /worker/manage behind SWAG and /manage when reached directly; and it
+    // says nothing a stranger could use, so it needs no key.
+    if (context.Request.Path == "/" && HttpMethods.IsGet(context.Request.Method))
+    {
+        context.Response.Redirect("manage");
+        return;
+    }
+
     // Bearer for the app, Basic for a browser. The management page is meant to
     // be opened by a person, and a person cannot set a header -- while putting
     // the key in the query string would write it into history, bookmarks and
