@@ -2,20 +2,38 @@
 
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 
-Two files, copied into the SWAG config volume:
+The app reaches the worker at **`https://nas.denlair.com/whenwillthebus/`**,
+and that address must stay exactly as it is: every phone is set up with it,
+and the app's HTTP client deliberately follows no redirects, so moving it or
+redirecting it cuts the app off.
+
+**`https://nas.denlair.com/worker/`** is a second way in, for a browser: the
+root sends a person to `/manage`, which asks for the key (any username).
+
+Four files, copied into the SWAG config volume:
 
 | File | Goes to | Why |
 |---|---|---|
-| `00-whenwillthebus-limits.conf` | `nginx/site-confs/` | http context — defines the rate-limit zone. Named `00-` so it loads before the proxy-conf that uses it. |
-| `whenwillthebus.subfolder.conf` | `nginx/proxy-confs/` | the `location` block |
+| `00-whenwillthebus-limits.conf` | `nginx/site-confs/` | http context — defines the rate-limit zone. Named `00-` so it loads before the proxy-confs that use it. |
+| `whenwillthebus-location.conf` | `nginx/` | everything about reaching the worker except where it is mounted: the Cloudflare-only rule, the rate limit, the upstream. Included by both locations, so the two cannot drift apart. |
+| `whenwillthebus.subfolder.conf` | `nginx/proxy-confs/` | `/whenwillthebus/`, the app's address |
+| `worker.subfolder.conf` | `nginx/proxy-confs/` | `/worker/`, for a browser |
 
 ```bash
 scp deploy/swag/*.conf user@host:/tmp/
 ssh user@host '
   sudo install -m 644 /tmp/00-whenwillthebus-limits.conf /docker/swag/nginx/site-confs/
+  sudo install -m 644 /tmp/whenwillthebus-location.conf  /docker/swag/nginx/
+  sudo install -m 644 /tmp/worker.subfolder.conf          /docker/swag/nginx/proxy-confs/
   sudo install -m 644 /tmp/whenwillthebus.subfolder.conf  /docker/swag/nginx/proxy-confs/
   sudo docker exec swag nginx -t && sudo docker exec swag nginx -s reload'
 ```
+
+**`nginx -t` passing proves nothing about this order.** Each location includes
+the shared file BEFORE its `rewrite ... break`, because `break` ends the
+rewrite phase and the `set $upstream_*` lines belong to it. The other way
+round is valid config that answers every request with a 500 (`invalid URL
+prefix in "://:"`), so check `/worker/health` returns 200 after a reload.
 
 The worker's stack must join the network SWAG is on (`home` here) so nginx can
 reach it as `http://whenwillthebus:8080`.
