@@ -145,6 +145,15 @@ echo "==> APNs          production"
 if [ "$ONLY_UPLOAD" = "1" ]; then
   IPA=$(find src/WhenWillTheBus.App/bin/Release/net10.0-ios -name "*.ipa" | head -1)
   [ -n "$IPA" ] || { echo "error: no .ipa to upload. Build one first." >&2; exit 1; }
+
+  # The number to announce is the one INSIDE the .ipa, not a fresh timestamp.
+  # Announcing the time of the upload told the worker a build that does not
+  # exist was current (23 Oct 2026: built 202610232355, announced ...57), so
+  # every phone on the real build was told it was out of date.
+  BUILD_NUMBER=$(unzip -p "$IPA" 'Payload/*.app/Info.plist' | plutil -extract CFBundleVersion raw -)
+  [ -n "$BUILD_NUMBER" ] || { echo "error: could not read the build number from $IPA" >&2; exit 1; }
+  echo "==> Uploading the build already made: $BUILD_NUMBER"
+
   upload "$IPA"
   exit 0
 fi
