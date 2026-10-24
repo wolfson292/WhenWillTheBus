@@ -161,6 +161,13 @@ public sealed class WheresTheBusClient(HttpClient http, WheresTheBusCredentials 
     /// else is usually a dead session. Re-login ONCE and retry, then give up —
     /// this is what makes long-running polling survive, and the bounded retry is
     /// what stops a genuine outage becoming a hammering loop.
+    ///
+    /// A session can also die as a bare HTTP 401 with no body to read. That is
+    /// the same dead session and gets the same single re-login; only a 401 that
+    /// survives a fresh login means the credentials themselves are refused.
+    /// Treating the first 401 as final stopped the worker for good on
+    /// 23 October 2026 -- it backed off for fifteen minutes, came back with the
+    /// same dead session, and repeated that all day.
     /// </remarks>
     private async Task<JsonDocument> CallAsync(
         string endpoint,
@@ -183,7 +190,17 @@ public sealed class WheresTheBusClient(HttpClient http, WheresTheBusCredentials 
             string body = JsonBody([.. arguments, ("sessionId", sessionId)]);
             string url = $"{BasePath}{ApiPath}{endpoint}?sessionId={Uri.EscapeDataString(sessionId)}";
 
-            JsonDocument response = await PostAsync(url, body, cancellationToken).ConfigureAwait(false);
+            JsonDocument response;
+            try
+            {
+                response = await PostAsync(url, body, cancellationToken).ConfigureAwait(false);
+            }
+            catch (WheresTheBusAuthException) when (attempt == 1)
+            {
+                await LoginAsync(cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
             if (response.RootElement.Long("resCode") == 0)
             {
                 return response;
