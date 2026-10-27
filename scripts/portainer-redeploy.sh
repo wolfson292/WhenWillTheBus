@@ -20,6 +20,7 @@
 #   scripts/portainer-redeploy.sh [stack-name]          # default: whenwillthebus
 #   scripts/portainer-redeploy.sh --pull magicmovienight # image from a registry
 #   scripts/portainer-redeploy.sh --set-cleanup          # road matching + run review
+#   scripts/portainer-redeploy.sh --set-travel           # drive times to the stop
 #
 # Configuration, in order of preference:
 #   PORTAINER_URL       e.g. http://192.168.1.143:9000
@@ -37,6 +38,7 @@ wwtb_help "${BASH_SOURCE[0]}" "$@"
 SET_MEDIA=0
 SET_ADMIN=0
 SET_CLEANUP=0
+SET_TRAVEL=0
 PULL=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -46,6 +48,9 @@ while [ $# -gt 0 ]; do
     # points the roads at scripts/install-roads.sh's server; the Anthropic key
     # is left for you to paste into Portainer, because it is a secret.
     --set-cleanup) SET_CLEANUP=1; shift ;;
+    # "Can I beat the bus to the stop?" Adds the drive-time settings; the
+    # TomTom key, a secret, is left for you to paste into Portainer.
+    --set-travel) SET_TRAVEL=1; shift ;;
     # For a stack whose image comes from a REGISTRY rather than being built on
     # the host. Without it Portainer reuses whatever is already pulled, so a
     # redeploy after a CI build quietly redeploys the old image.
@@ -108,7 +113,7 @@ KEY
   exit 1
 }
 
-export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME SET_MEDIA SET_ADMIN SET_CLEANUP PULL
+export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME SET_MEDIA SET_ADMIN SET_CLEANUP SET_TRAVEL PULL
 export ROADS_URL="${ROADS_URL:-http://${WWTB_HOST:-192.168.3.151}:${WWTB_ROADS_PORT:-5005}}"
 
 echo "==> Portainer $PORTAINER_URL"
@@ -138,6 +143,13 @@ CLEANUP_BLOCK = """
       # it. Either blank turns that half off.
       WWTB_Cleanup__RoadsUrl: ${ROADS_URL}
       WWTB_Cleanup__AnthropicApiKey: ${ANTHROPIC_API_KEY}
+"""
+
+TRAVEL_BLOCK = """
+      # "Can I get to the stop before the bus?" -- empty-road times from the
+      # roads server, live traffic from TomTom for one trip when it is asked.
+      WWTB_Travel__RoadsUrl: ${ROADS_URL}
+      WWTB_Travel__TomTomApiKey: ${TOMTOM_API_KEY}
 """
 
 MEDIA_BLOCK = """
@@ -239,6 +251,23 @@ if os.environ.get("SET_CLEANUP") == "1":
     if "ANTHROPIC_API_KEY" not in by_name:
         env.append({"name": "ANTHROPIC_API_KEY", "value": ""})
         print("==> Add ANTHROPIC_API_KEY in Portainer (Stacks -> whenwillthebus -> Environment) to turn on run review")
+
+if os.environ.get("SET_TRAVEL") == "1":
+    if "WWTB_Travel__RoadsUrl" not in content:
+        marker = "      Logging__LogLevel__Default:"
+        if marker not in content:
+            sys.exit("error: cannot find where to add the travel settings in the stack file")
+
+        content = content.replace(marker, TRAVEL_BLOCK.rstrip() + "\n\n" + marker, 1)
+        print("==> Adding drive times to the stack file")
+
+    by_name = {v.get("name"): v for v in env}
+    if "ROADS_URL" not in by_name:
+        env.append({"name": "ROADS_URL", "value": os.environ["ROADS_URL"]})
+
+    if "TOMTOM_API_KEY" not in by_name:
+        env.append({"name": "TOMTOM_API_KEY", "value": ""})
+        print("==> Add TOMTOM_API_KEY in Portainer (Stacks -> whenwillthebus -> Environment) for live traffic")
 
 if os.environ.get("SET_MEDIA") == "1" and "WWTB_Media__MovieNightUrl" not in content:
     marker = "      Logging__LogLevel__Default:"

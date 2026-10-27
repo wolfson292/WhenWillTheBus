@@ -38,3 +38,8 @@ services:
       # no coordinates in it. Leave either blank to turn that half off.
       WWTB_Cleanup__RoadsUrl: ${ROADS_URL:-}
       WWTB_Cleanup__AnthropicApiKey: ${ANTHROPIC_API_KEY:-}
+      # "Can I get to the stop before the bus?" (POST /travel/meet-bus). Live
+      # traffic is fetched from TomTom for one trip when asked; without a key,
+      # drive times are empty-road times from the roads server.
+      WWTB_Travel__RoadsUrl: ${ROADS_URL:-}
+      WWTB_Travel__TomTomApiKey: ${TOMTOM_API_KEY:-}

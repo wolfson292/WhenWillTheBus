@@ -17,6 +17,7 @@ using WhenWillTheBus.Server.Devices;
 using WhenWillTheBus.Server.LiveActivity;
 using WhenWillTheBus.Server.Media;
 using WhenWillTheBus.Server.Monitoring;
+using WhenWillTheBus.Server.Travel;
 
 // Container health check.
 //
@@ -133,6 +134,16 @@ builder.Services.AddHttpClient<RoadMatcher>(http => http.Timeout = TimeSpan.From
 builder.Logging.AddFilter("System.Net.Http.HttpClient.RoadMatcher", LogLevel.Warning);
 builder.Services.AddSingleton<RunReviewer>();
 builder.Services.AddSingleton<TraceCleaner>();
+
+// "Can I get to the stop before the bus?" -- a drive time fetched only when
+// that is asked, with live traffic from TomTom where there is a key.
+builder.Services
+    .AddOptions<TravelOptions>()
+    .Bind(builder.Configuration.GetSection(TravelOptions.Section));
+builder.Services.AddHttpClient<DriveTimes>(http => http.Timeout = TimeSpan.FromSeconds(10));
+
+// Both places are in its URLs, and TomTom's carries the key.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.DriveTimes", LogLevel.Warning);
 
 builder.Services.AddSingleton<BusMonitor>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<BusMonitor>());
@@ -1024,6 +1035,76 @@ app.MapGet("/manage", async (
 
 // What the worker knows, WITHOUT coordinates. A status page is a convenience;
 // leaking a child's position into one would not be.
+// When to leave to be at the stop before the bus, from where somebody is now.
+//
+// POST, with the position in the BODY: the reverse proxy logs every URL, and
+// where a parent is standing has no business in an access log. Asked by Home
+// Assistant when it wants to know -- nothing here runs on a timer, so traffic
+// is fetched for one trip, at the moment it matters, and never otherwise.
+app.MapPost("/travel/meet-bus", async (
+    MeetBusAsk ask,
+    BusMonitor monitor,
+    PredictionEngine engine,
+    DriveTimes drives,
+    IOptions<TravelOptions> travel,
+    LocalClock clock,
+    CancellationToken token) =>
+{
+    if (ask.Latitude is not double latitude || ask.Longitude is not double longitude
+        || Math.Abs(latitude) > 90 || Math.Abs(longitude) > 180)
+    {
+        return Results.BadRequest(new { error = "latitude and longitude are required" });
+    }
+
+    Student? rider = monitor.Students.Values.FirstOrDefault();
+    if (rider?.Stop is not GeoPoint stop)
+    {
+        return Results.NotFound(new { error = "no rider with a known stop" });
+    }
+
+    DateTimeOffset now = clock.Now;
+    ArrivalPrediction? prediction = engine.PredictNextArrival(rider, now);
+    if (prediction is null)
+    {
+        return Results.Ok(new { verdict = "no_bus", message = "No bus is expected at the stop today." });
+    }
+
+    DriveTime? drive = await drives.BetweenAsync(new GeoPoint(latitude, longitude), stop, token);
+    if (drive is null)
+    {
+        return Results.Ok(new
+        {
+            verdict = "unknown",
+            bus_due = prediction.Arrival,
+            message = $"Couldn't work out the drive. Bus due {clock.ToLocal(prediction.Arrival):h:mm tt}.",
+        });
+    }
+
+    MeetPlan plan = MeetTheBus.Decide(
+        now, prediction.Arrival, drive, travel.Value.Margin, moment => clock.ToLocal(moment).ToString("h:mm tt"));
+
+    return Results.Ok(new
+    {
+        verdict = plan.Verdict switch
+        {
+            MeetVerdict.LeaveNow => "leave_now",
+            MeetVerdict.Hurry => "hurry",
+            MeetVerdict.TooLate => "too_late",
+            _ => "wait",
+        },
+        message = plan.Message,
+        leave_by = plan.LeaveBy,
+        leave_in_minutes = plan.LeaveInMinutes,
+        bus_due = prediction.Arrival,
+        bus_basis = prediction.Basis.ToString(),
+        run = prediction.Run == Run.Am ? "am" : "pm",
+        drive_minutes = Math.Round(drive.Seconds / 60.0, 1),
+        traffic_minutes = drive.TrafficSeconds is int traffic ? Math.Round(traffic / 60.0, 1) : (double?)null,
+        drive_miles = Math.Round(drive.Miles, 1),
+        traffic_source = drive.Source,
+    });
+});
+
 app.MapGet("/status", (BusMonitor monitor, PredictionEngine engine, LocalClock clock) =>
 {
     DateTimeOffset now = clock.Now;
@@ -1132,6 +1213,9 @@ internal sealed class SuggestionThrottle
 }
 
 /// <summary>A suggestion asked for in words.</summary>
+/// <summary>Where somebody is, asking whether they can beat the bus to the stop.</summary>
+internal sealed record MeetBusAsk(double? Latitude, double? Longitude);
+
 internal sealed record SuggestAsk(string? Prompt, string? Kind, int? Count);
 
 /// <summary>A notification an admin is sending by hand.</summary>
