@@ -85,6 +85,27 @@ public sealed record RunArrival
     public int? ErrorAtArrival { get; init; }
 
     /// <summary>
+    /// <see cref="Track"/> put back on the roads, by map matching on the
+    /// worker. Empty until that has been tried, or where it found no road.
+    /// </summary>
+    /// <remarks>
+    /// The track itself is kept as recorded: it is what the route estimate
+    /// matches against, timing and all. This is for DRAWING, where a fix every
+    /// thirty seconds cuts every corner through whatever stands on it.
+    /// </remarks>
+    public IReadOnlyList<GeoPoint> Road { get; init; } = [];
+
+    /// <summary>
+    /// How sure the matcher was that <see cref="Road"/> is the road driven,
+    /// from 0 to 1. Null until matching has been tried; 0 where it was tried
+    /// and found nothing, so it is not tried again on every pass.
+    /// </summary>
+    public double? RoadConfidence { get; init; }
+
+    /// <summary>What the run turned out to be, once reviewed.</summary>
+    public RunReview? Review { get; init; }
+
+    /// <summary>
     /// How much this record knows, for deciding which of two records of the
     /// same arrival to keep.
     /// </summary>

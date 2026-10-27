@@ -33,3 +33,8 @@ services:
       # one environment is rejected outright by the other -- as a silent
       # non-delivery, so this is worth getting right first.
       WWTB_Apns__UseSandbox: ${APNS_SANDBOX:-false}
+      # Tidying each finished run. Roads come from scripts/install-roads.sh's
+      # OSRM on this host; the review sends Claude a summary of each run with
+      # no coordinates in it. Leave either blank to turn that half off.
+      WWTB_Cleanup__RoadsUrl: ${ROADS_URL:-}
+      WWTB_Cleanup__AnthropicApiKey: ${ANTHROPIC_API_KEY:-}

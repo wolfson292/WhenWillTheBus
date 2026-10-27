@@ -19,6 +19,7 @@
 # Usage:
 #   scripts/portainer-redeploy.sh [stack-name]          # default: whenwillthebus
 #   scripts/portainer-redeploy.sh --pull magicmovienight # image from a registry
+#   scripts/portainer-redeploy.sh --set-cleanup          # road matching + run review
 #
 # Configuration, in order of preference:
 #   PORTAINER_URL       e.g. http://192.168.1.143:9000
@@ -35,11 +36,16 @@ wwtb_help "${BASH_SOURCE[0]}" "$@"
 
 SET_MEDIA=0
 SET_ADMIN=0
+SET_CLEANUP=0
 PULL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --set-media) SET_MEDIA=1; shift ;;
     --set-admin) SET_ADMIN=1; shift ;;
+    # Road matching and run review. Adds the two settings to the stack file and
+    # points the roads at scripts/install-roads.sh's server; the Anthropic key
+    # is left for you to paste into Portainer, because it is a secret.
+    --set-cleanup) SET_CLEANUP=1; shift ;;
     # For a stack whose image comes from a REGISTRY rather than being built on
     # the host. Without it Portainer reuses whatever is already pulled, so a
     # redeploy after a CI build quietly redeploys the old image.
@@ -102,7 +108,8 @@ KEY
   exit 1
 }
 
-export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME SET_MEDIA SET_ADMIN PULL
+export PORTAINER_URL="$RESOLVED_URL" PORTAINER_API_KEY="$RESOLVED_KEY" STACK_NAME SET_MEDIA SET_ADMIN SET_CLEANUP PULL
+export ROADS_URL="${ROADS_URL:-http://${WWTB_HOST:-192.168.3.151}:${WWTB_ROADS_PORT:-5005}}"
 
 echo "==> Portainer $PORTAINER_URL"
 
@@ -123,6 +130,14 @@ ADMIN_BLOCK = """
       # A SECOND key, for the one phone allowed to see the others and send them
       # notifications. Unset means nobody can, which is the right default.
       WWTB_Api__AdminKey: ${WWTB_ADMIN_KEY}
+"""
+
+CLEANUP_BLOCK = """
+      # Tidying each finished run: roads from scripts/install-roads.sh's OSRM on
+      # this host, and a review by Claude of a summary with no coordinates in
+      # it. Either blank turns that half off.
+      WWTB_Cleanup__RoadsUrl: ${ROADS_URL}
+      WWTB_Cleanup__AnthropicApiKey: ${ANTHROPIC_API_KEY}
 """
 
 MEDIA_BLOCK = """
@@ -203,6 +218,27 @@ if os.environ.get("SET_ADMIN") == "1":
         import secrets
         env.append({"name": "WWTB_ADMIN_KEY", "value": secrets.token_urlsafe(32)})
         print("==> Generated an admin key (find it in Portainer: Stacks -> whenwillthebus -> Editor)")
+
+if os.environ.get("SET_CLEANUP") == "1":
+    if "WWTB_Cleanup__RoadsUrl" not in content:
+        marker = "      Logging__LogLevel__Default:"
+        if marker not in content:
+            sys.exit("error: cannot find where to add the cleanup settings in the stack file")
+
+        content = content.replace(marker, CLEANUP_BLOCK.rstrip() + "\n\n" + marker, 1)
+        print("==> Adding road matching and run review to the stack file")
+
+    by_name = {v.get("name"): v for v in env}
+    if "ROADS_URL" in by_name:
+        by_name["ROADS_URL"]["value"] = os.environ["ROADS_URL"]
+    else:
+        env.append({"name": "ROADS_URL", "value": os.environ["ROADS_URL"]})
+
+    # The key is never generated, printed or passed through here: it is
+    # created in the Anthropic Console and pasted into Portainer.
+    if "ANTHROPIC_API_KEY" not in by_name:
+        env.append({"name": "ANTHROPIC_API_KEY", "value": ""})
+        print("==> Add ANTHROPIC_API_KEY in Portainer (Stacks -> whenwillthebus -> Environment) to turn on run review")
 
 if os.environ.get("SET_MEDIA") == "1" and "WWTB_Media__MovieNightUrl" not in content:
     marker = "      Logging__LogLevel__Default:"

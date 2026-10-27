@@ -180,6 +180,7 @@ public static class HistoryStore
             }
 
             writer.WriteEndArray();
+            CleanupFields.Write(writer, arrival);
             writer.WriteEndObject();
         }
 
@@ -243,7 +244,7 @@ public static class HistoryStore
                 }
             }
 
-            arrivals.Add(new RunArrival
+            arrivals.Add(CleanupFields.Read(item, new RunArrival
             {
                 Run = string.Equals(item.String("run"), "pm", StringComparison.OrdinalIgnoreCase) ? Run.Pm : Run.Am,
                 Arrival = when,
@@ -257,7 +258,7 @@ public static class HistoryStore
                 Boarded = TryInstant(item.String("boarded"), out DateTimeOffset boarded) ? boarded : null,
                 ErrorAtFiveMinutes = (int?)item.Long("error_5min"),
                 ErrorAtArrival = (int?)item.Long("error_final"),
-            });
+            }));
         }
 
         return arrivals;

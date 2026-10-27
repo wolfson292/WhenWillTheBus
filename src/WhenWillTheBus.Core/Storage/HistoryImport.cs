@@ -120,7 +120,7 @@ public static class HistoryImport
 
         double closest = arrival.Double("closest") ?? 0.0;
 
-        return new RunArrival
+        return CleanupFields.Read(arrival, new RunArrival
         {
             Run = run,
             Arrival = when,
@@ -140,7 +140,7 @@ public static class HistoryImport
             // Absent from a Home Assistant export, which never recorded it.
             ErrorAtFiveMinutes = (int?)arrival.Long("error_5min"),
             ErrorAtArrival = (int?)arrival.Long("error_final"),
-        };
+        });
     }
 
     /// <summary>

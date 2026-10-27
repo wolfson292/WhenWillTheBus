@@ -12,6 +12,7 @@ using WhenWillTheBus.Core.Prediction;
 using WhenWillTheBus.Core.Storage;
 using WhenWillTheBus.Server.Api;
 using WhenWillTheBus.Server.Apns;
+using WhenWillTheBus.Server.Cleanup;
 using WhenWillTheBus.Server.Devices;
 using WhenWillTheBus.Server.LiveActivity;
 using WhenWillTheBus.Server.Media;
@@ -119,6 +120,20 @@ builder.Services.AddSingleton<ClientRegistry>();
 builder.Services.AddSingleton<ReleaseTracker>();
 builder.Services.AddSingleton<LiveActivityPublisher>();
 builder.Services.AddSingleton<RunAlerter>();
+// Tidying each finished run: roads from the household's own OSRM, and a
+// review from Claude of a summary with no coordinates in it.
+builder.Services
+    .AddOptions<CleanupOptions>()
+    .Bind(builder.Configuration.GetSection(CleanupOptions.Section));
+builder.Services.AddHttpClient<RoadMatcher>(http => http.Timeout = TimeSpan.FromSeconds(20));
+
+// OSRM takes the fixes IN THE PATH, which the request logging prints whole --
+// so at Information every match wrote a child's route into the container log.
+// Failures are still logged by the cleaner, without the URL.
+builder.Logging.AddFilter("System.Net.Http.HttpClient.RoadMatcher", LogLevel.Warning);
+builder.Services.AddSingleton<RunReviewer>();
+builder.Services.AddSingleton<TraceCleaner>();
+
 builder.Services.AddSingleton<BusMonitor>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<BusMonitor>());
 builder.Services.AddSingleton<ReadyWatcher>();

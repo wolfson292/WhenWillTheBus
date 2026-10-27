@@ -575,11 +575,20 @@ public sealed class BusService : INotifyPropertyChanged
             return [];
         }
 
+        // The worker's matched road where it has one, which follows the street
+        // round corners the raw fixes cut through. And not a run the review
+        // found to be GPS garbage: one frozen morning would otherwise draw a
+        // road the bus never took, as boldly as any other.
         return _engine.ArrivalsFor(Rider.ChildId)
-            .Where(arrival => arrival.Run == run && !arrival.Substitute && arrival.Track.Count > 1)
-            .Select(arrival => (IReadOnlyList<GeoPoint>)arrival.Track
-                .Select(point => new GeoPoint(point.Latitude, point.Longitude))
-                .ToList())
+            .Where(arrival => arrival.Run == run
+                && !arrival.Substitute
+                && arrival.Review?.Verdict is not (RunVerdict.BadGps or RunVerdict.Substitute)
+                && (arrival.Road.Count > 1 || arrival.Track.Count > 1))
+            .Select(arrival => arrival.Road.Count > 1
+                ? arrival.Road
+                : (IReadOnlyList<GeoPoint>)arrival.Track
+                    .Select(point => new GeoPoint(point.Latitude, point.Longitude))
+                    .ToList())
             .ToList();
     }
 

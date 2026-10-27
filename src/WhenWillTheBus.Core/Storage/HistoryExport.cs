@@ -125,6 +125,10 @@ public static class HistoryExport
             }
 
             writer.WriteEndArray();
+
+            // What the worker made of the run afterwards: the road it was
+            // matched to, and the review. The phone draws the map from these.
+            CleanupFields.Write(writer, arrival);
             writer.WriteEndObject();
         }
 

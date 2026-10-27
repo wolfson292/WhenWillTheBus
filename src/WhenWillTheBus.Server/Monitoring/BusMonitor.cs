@@ -6,6 +6,7 @@ using WhenWillTheBus.Core.Api;
 using WhenWillTheBus.Core.Model;
 using WhenWillTheBus.Core.Prediction;
 using WhenWillTheBus.Core.Storage;
+using WhenWillTheBus.Server.Cleanup;
 using WhenWillTheBus.Server.Devices;
 using WhenWillTheBus.Server.Media;
 using WhenWillTheBus.Server.LiveActivity;
@@ -37,6 +38,7 @@ public sealed class BusMonitor(
     ReleaseTracker releases,
     IOptions<MediaOptions> media,
     LocalClock clock,
+    TraceCleaner cleaner,
     IOptions<MonitorOptions> options,
     ILogger<BusMonitor> logger) : BackgroundService
 {
@@ -233,6 +235,13 @@ public sealed class BusMonitor(
         if (engine.PromotePending(_students, now))
         {
             await SaveHistoryAsync(token, "a new arrival").ConfigureAwait(false);
+        }
+
+        // Only between runs: tidying last week's traces must never hold up a
+        // poll while a bus is on its way.
+        if (!busy && await cleaner.PassAsync(_students.Keys, now, token).ConfigureAwait(false))
+        {
+            await SaveHistoryAsync(token, "cleanup").ConfigureAwait(false);
         }
 
         if (registry.Prune(now) > 0)

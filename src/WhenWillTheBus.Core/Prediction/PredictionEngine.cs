@@ -51,6 +51,37 @@ public sealed class PredictionEngine(LocalClock clock)
     public IReadOnlyList<RunArrival> ArrivalsFor(long childId) =>
         _arrivals.TryGetValue(childId, out List<RunArrival>? history) ? history : [];
 
+    /// <summary>
+    /// Replace one stored arrival with an amended copy of itself. Returns
+    /// whether it was found.
+    /// </summary>
+    /// <remarks>
+    /// For what is learned about a run after it is over -- the road it was
+    /// matched to, the review -- which belongs on the arrival it describes and
+    /// must travel with it wherever history goes.
+    /// </remarks>
+    public bool Amend(long childId, Run run, DateTimeOffset arrival, Func<RunArrival, RunArrival> change)
+    {
+        if (!_arrivals.TryGetValue(childId, out List<RunArrival>? history))
+        {
+            return false;
+        }
+
+        int index = history.FindIndex(item => item.Run == run && item.Arrival == arrival);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        // A new list, never an edit in place: the status endpoints read these
+        // lists from other threads, and setting an element under a running
+        // enumerator throws there rather than here.
+        List<RunArrival> amended = [.. history];
+        amended[index] = change(amended[index]);
+        _arrivals[childId] = amended;
+        return true;
+    }
+
     /// <summary>The most recent reading folded in for a rider.</summary>
     public RiderInfo? LatestFor(long childId) => _latest.GetValueOrDefault(childId);
 
@@ -855,7 +886,19 @@ public sealed class PredictionEngine(LocalClock clock)
             }
 
             RunArrival winner = Compare(item.Knows, current.Knows) > 0 ? item : current;
-            byRunDay[key] = winner with { Replayed = item.Replayed || current.Replayed };
+            RunArrival loser = ReferenceEquals(winner, item) ? current : item;
+
+            // So is what the worker made of it afterwards. The phone's own
+            // record of a run it watched can know more legs than the worker's
+            // and still have no matched road or review, which only the worker
+            // writes -- and winning must not throw those away.
+            byRunDay[key] = winner with
+            {
+                Replayed = item.Replayed || current.Replayed,
+                Road = winner.RoadConfidence is null ? loser.Road : winner.Road,
+                RoadConfidence = winner.RoadConfidence ?? loser.RoadConfidence,
+                Review = winner.Review ?? loser.Review,
+            };
         }
 
         return byRunDay.Values.OrderBy(item => item.Arrival).ToList();
