@@ -182,12 +182,51 @@ public sealed class HistoryPage : ContentPage
 
         string tail = notes.Count > 0 ? $"   ({string.Join(", ", notes)})" : string.Empty;
 
-        return new Label
+        Label line = new()
         {
             Text = $"{local:ddd d MMM}   {local:h:mm tt}{tail}",
             FontSize = 13,
             TextColor = arrival.Substitute ? Theme.TextDim : Theme.Text,
             Margin = new Thickness(0, 1),
+        };
+
+        if (arrival.Review is not RunReview review || string.IsNullOrWhiteSpace(review.Note))
+        {
+            return line;
+        }
+
+        return new VerticalStackLayout
+        {
+            Spacing = 0,
+            Margin = new Thickness(0, 0, 0, 4),
+            Children = { line, Review(review) },
+        };
+    }
+
+    /// <summary>
+    /// What the worker's review made of the run, under it.
+    /// </summary>
+    /// <remarks>
+    /// Named first when it was not the usual journey, because that is the part
+    /// worth reading. A run with unreliable GPS is in the fault colour: it is
+    /// the one the map leaves out, and this is where that is said.
+    /// </remarks>
+    private static Label Review(RunReview review)
+    {
+        string? label = review.Verdict switch
+        {
+            RunVerdict.Detour => "Detour",
+            RunVerdict.Substitute => "Substitute bus",
+            RunVerdict.BadGps => "GPS unreliable, left off the map",
+            _ => null,
+        };
+
+        return new Label
+        {
+            Text = label is null ? review.Note : $"{label}: {review.Note}",
+            FontSize = 12,
+            TextColor = review.Verdict == RunVerdict.BadGps ? Theme.Fault : Theme.TextDim,
+            Margin = new Thickness(12, 0, 0, 0),
         };
     }
 
