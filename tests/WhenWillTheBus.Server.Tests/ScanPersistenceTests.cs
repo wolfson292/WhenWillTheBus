@@ -5,6 +5,7 @@ using WhenWillTheBus.Core.Api;
 using WhenWillTheBus.Core.Model;
 using WhenWillTheBus.Core.Prediction;
 using WhenWillTheBus.Core.Storage;
+using WhenWillTheBus.Server.Monitoring;
 
 namespace WhenWillTheBus.Server.Tests;
 
@@ -110,5 +111,66 @@ public sealed class ScanPersistenceTests
 
         Assert.Null(SchoolArrivalPredictor.Predict(
             student, new DateTimeOffset(2026, 9, 28, 12, 30, 0, TimeSpan.Zero), clock));
+    }
+
+    /// <summary>
+    /// Saving was half of it. The worker never READ the scans back, so the
+    /// first roster after a restart started every rider with none, and the
+    /// first scan poll then wrote today's over the lot.
+    /// </summary>
+    [Fact]
+    public async Task TheFirstRosterAfterARestartTakesTheScansOffDisk()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"wwtb-history-{Guid.NewGuid():N}.json");
+        try
+        {
+            List<ScanEvent> week = [];
+            foreach (int day in (int[])[22, 23, 24, 25, 26])
+            {
+                week.Add(Scan(day, 12, 1, ScanKind.Pickup));
+                week.Add(Scan(day, 13, 26, ScanKind.Dropoff));
+            }
+
+            await HistoryStore.SaveAsync(
+                path, [new StoredRider { ChildId = 42, Arrivals = [], Scans = week }]);
+
+            IReadOnlyList<StoredRider> back = await HistoryStore.LoadAsync(path);
+            Dictionary<long, IReadOnlyList<ScanEvent>> stored =
+                back.ToDictionary(rider => rider.ChildId, rider => rider.Scans);
+
+            // Straight from the roster endpoint, which knows nothing of scans.
+            Dictionary<long, Student> roster = new() { [42] = new Student { ChildId = 42, Name = "Rider" } };
+
+            Dictionary<long, Student> students = BusMonitor.CarryScans(roster, new Dictionary<long, Student>(), stored);
+
+            Assert.Equal(10, students[42].Scans.Count);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// Once running, memory is ahead of the disk: it has today's scans and the
+    /// disk may not yet. A later roster refresh must keep those, not go back.
+    /// </summary>
+    [Fact]
+    public void ALaterRosterKeepsWhatIsInMemoryOverWhatWasOnDisk()
+    {
+        Dictionary<long, IReadOnlyList<ScanEvent>> stored = new() { [42] = [Scan(25, 12, 1, ScanKind.Pickup)] };
+        Dictionary<long, Student> current = new()
+        {
+            [42] = new Student
+            {
+                ChildId = 42,
+                Name = "Rider",
+                Scans = [Scan(25, 12, 1, ScanKind.Pickup), Scan(26, 12, 1, ScanKind.Pickup)],
+            },
+        };
+
+        Dictionary<long, Student> roster = new() { [42] = new Student { ChildId = 42, Name = "Rider" } };
+
+        Assert.Equal(2, BusMonitor.CarryScans(roster, current, stored)[42].Scans.Count);
     }
 }

@@ -47,6 +47,11 @@ public sealed class BusMonitor(
     private DateTimeOffset _rosterRefreshedAt = DateTimeOffset.MinValue;
     private DateTimeOffset _scansPolledAt = DateTimeOffset.MinValue;
 
+    // Read off disk at startup and held until the roster names each rider.
+    // Students do not exist until then, so there is nowhere else to put them.
+    private IReadOnlyDictionary<long, IReadOnlyList<ScanEvent>> _storedScans =
+        new Dictionary<long, IReadOnlyList<ScanEvent>>();
+
     /// <summary>The riders currently known, for the status endpoint.</summary>
     public IReadOnlyDictionary<long, Student> Students => _students;
 
@@ -108,6 +113,8 @@ public sealed class BusMonitor(
             {
                 engine.LoadHistory(rider.ChildId, rider.Arrivals);
             }
+
+            _storedScans = stored.ToDictionary(rider => rider.ChildId, rider => rider.Scans);
 
             logger.LogInformation("Loaded history for {Count} rider(s)", stored.Count);
         }
@@ -250,18 +257,39 @@ public sealed class BusMonitor(
             userInfo.RootElement.GetProperty("payload"),
             allRiders.RootElement.GetProperty("payload"));
 
-        // Carry across the scans already accumulated: the endpoint only ever
-        // returns the current day, so a roster refresh must not drop them.
+        _students = CarryScans(fresh, _students, _storedScans);
+        logger.LogInformation("Roster: {Riders}", string.Join(", ", fresh.Values.Select(rider => rider.Name)));
+    }
+
+    /// <summary>
+    /// Give a freshly read roster the scans already known for each rider.
+    /// </summary>
+    /// <remarks>
+    /// The endpoint only ever returns the current day, so a roster refresh must
+    /// not drop what has accumulated -- and the FIRST refresh after a restart
+    /// has nothing in memory to carry, so it takes what was on disk. Without
+    /// that, the scans were saved and never read back: the first poll after
+    /// every restart wrote today's scans over the whole history, and on
+    /// 26 Oct the file held two.
+    /// </remarks>
+    public static Dictionary<long, Student> CarryScans(
+        Dictionary<long, Student> fresh,
+        IReadOnlyDictionary<long, Student> current,
+        IReadOnlyDictionary<long, IReadOnlyList<ScanEvent>> stored)
+    {
         foreach ((long childId, Student student) in fresh)
         {
-            if (_students.TryGetValue(childId, out Student? existing))
+            if (current.TryGetValue(childId, out Student? existing))
             {
                 fresh[childId] = student with { Scans = existing.Scans };
             }
+            else if (stored.TryGetValue(childId, out IReadOnlyList<ScanEvent>? scans))
+            {
+                fresh[childId] = student with { Scans = scans };
+            }
         }
 
-        _students = fresh;
-        logger.LogInformation("Roster: {Riders}", string.Join(", ", fresh.Values.Select(rider => rider.Name)));
+        return fresh;
     }
 
     /// <summary>Poll the scans. Returns whether anything actually changed.</summary>
