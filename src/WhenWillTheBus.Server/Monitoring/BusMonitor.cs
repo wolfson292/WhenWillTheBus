@@ -51,8 +51,11 @@ public sealed class BusMonitor(
 
     // Read off disk at startup and held until the roster names each rider.
     // Students do not exist until then, so there is nowhere else to put them.
-    private IReadOnlyDictionary<long, IReadOnlyList<ScanEvent>> _storedScans =
-        new Dictionary<long, IReadOnlyList<ScanEvent>>();
+    private Dictionary<long, IReadOnlyList<ScanEvent>> _storedScans = [];
+
+    // Who each id with history belonged to, as last seen. Outlives the roster
+    // on purpose: it is how a rider who reappears under a new id is recognised.
+    private readonly Dictionary<long, string?> _names = [];
 
     /// <summary>The riders currently known, for the status endpoint.</summary>
     public IReadOnlyDictionary<long, Student> Students => _students;
@@ -117,6 +120,10 @@ public sealed class BusMonitor(
             }
 
             _storedScans = stored.ToDictionary(rider => rider.ChildId, rider => rider.Scans);
+            foreach (StoredRider rider in stored)
+            {
+                _names[rider.ChildId] = rider.Name;
+            }
 
             logger.LogInformation("Loaded history for {Count} rider(s)", stored.Count);
         }
@@ -266,8 +273,82 @@ public sealed class BusMonitor(
             userInfo.RootElement.GetProperty("payload"),
             allRiders.RootElement.GetProperty("payload"));
 
-        _students = CarryScans(fresh, _students, _storedScans);
+        fresh = CarryScans(fresh, _students, _storedScans);
+
+        // BEFORE the roster replaces the old one, while the old id's scans are
+        // still to hand. On 27 Oct WheresTheBus gave Willow a new id overnight;
+        // everything here is keyed by it, so she became a rider with no past,
+        // and the next save wrote the file without the old one -- 49 runs gone,
+        // and both apps had nothing to predict from that morning.
+        List<(long From, long To)> moves = Renumbered(fresh, _names);
+        foreach ((long from, long to) in moves)
+        {
+            engine.Renumber(from, to);
+
+            IReadOnlyList<ScanEvent> older = _students.TryGetValue(from, out Student? previous)
+                ? previous.Scans
+                : _storedScans.GetValueOrDefault(from) ?? [];
+            fresh[to] = fresh[to] with
+            {
+                Scans = [.. older
+                    .Concat(fresh[to].Scans)
+                    .GroupBy(scan => scan.Timestamp)
+                    .Select(group => group.Last())
+                    .OrderBy(scan => scan.Timestamp)
+                    .TakeLast(HistoryStore.ScanHistoryLimit)],
+            };
+
+            _storedScans.Remove(from);
+            _names.Remove(from);
+            logger.LogWarning("Rider {From} is now {To}; moved their history across", from, to);
+        }
+
+        foreach (Student student in fresh.Values)
+        {
+            _names[student.ChildId] = student.Name;
+        }
+
+        _students = fresh;
         logger.LogInformation("Roster: {Riders}", string.Join(", ", fresh.Values.Select(rider => rider.Name)));
+
+        if (moves.Count > 0)
+        {
+            await SaveHistoryAsync(token, "a rider renumbered").ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Which riders with history now appear on the roster under another id.
+    /// </summary>
+    /// <remarks>
+    /// Matched by name. A file from before names were kept has none, and then
+    /// only the unambiguous case is taken -- one rider gone, one on the roster
+    /// -- because moving one child's history onto another's would be worse
+    /// than leaving it where it is.
+    /// </remarks>
+    public static List<(long From, long To)> Renumbered(
+        IReadOnlyDictionary<long, Student> roster,
+        IReadOnlyDictionary<long, string?> known)
+    {
+        List<long> gone = [.. known.Keys.Where(id => !roster.ContainsKey(id))];
+        List<(long From, long To)> moves = [];
+
+        foreach (long from in gone)
+        {
+            string? name = known[from]?.Trim();
+            List<long> matches = name is null
+                ? (gone.Count == 1 && roster.Count == 1 ? [.. roster.Keys] : [])
+                : [.. roster.Values
+                    .Where(student => string.Equals(student.Name.Trim(), name, StringComparison.OrdinalIgnoreCase))
+                    .Select(student => student.ChildId)];
+
+            if (matches.Count == 1)
+            {
+                moves.Add((from, matches[0]));
+            }
+        }
+
+        return moves;
     }
 
     /// <summary>
@@ -348,12 +429,20 @@ public sealed class BusMonitor(
 
     private async Task SaveHistoryAsync(CancellationToken token, string why)
     {
+        // Every rider with anything learned, not just today's roster: a rider
+        // the roster stops naming keeps their history on disk, where a later
+        // renumbering can still find it.
         List<StoredRider> riders = _students.Keys
+            .Union(engine.Riders)
+            .Union(_storedScans.Keys)
             .Select(childId => new StoredRider
             {
                 ChildId = childId,
+                Name = _names.GetValueOrDefault(childId),
                 Arrivals = engine.ArrivalsFor(childId),
-                Scans = _students[childId].Scans,
+                Scans = _students.TryGetValue(childId, out Student? student)
+                    ? student.Scans
+                    : _storedScans.GetValueOrDefault(childId) ?? [],
             })
             .ToList();
 

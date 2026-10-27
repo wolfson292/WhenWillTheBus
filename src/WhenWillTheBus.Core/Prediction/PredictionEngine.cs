@@ -82,6 +82,25 @@ public sealed class PredictionEngine(LocalClock clock)
         return true;
     }
 
+    /// <summary>Every rider with learned arrivals, whether or not still on the roster.</summary>
+    public IReadOnlyList<long> Riders => [.. _arrivals.Keys];
+
+    /// <summary>
+    /// Move a rider's history to the id the roster now gives them, merged with
+    /// anything already learned under it. Returns whether there was any.
+    /// </summary>
+    public bool Renumber(long from, long to)
+    {
+        if (from == to || !_arrivals.TryGetValue(from, out List<RunArrival>? moved))
+        {
+            return false;
+        }
+
+        _arrivals[to] = TrimPerRun(Merge(ArrivalsFor(to), moved));
+        _arrivals.Remove(from);
+        return true;
+    }
+
     /// <summary>The most recent reading folded in for a rider.</summary>
     public RiderInfo? LatestFor(long childId) => _latest.GetValueOrDefault(childId);
 

@@ -13,6 +13,13 @@ public sealed record StoredRider
 {
     public required long ChildId { get; init; }
 
+    /// <summary>
+    /// Who the history belongs to, kept because the id is not permanent:
+    /// WheresTheBus re-issued a rider's id overnight on 27 Oct, and the name is
+    /// what tells the new id's rider apart from a different child.
+    /// </summary>
+    public string? Name { get; init; }
+
     public IReadOnlyList<RunArrival> Arrivals { get; init; } = [];
 
     /// <summary>
@@ -99,6 +106,7 @@ public static class HistoryStore
             riders.Add(new StoredRider
             {
                 ChildId = childId.Value,
+                Name = rider.String("name"),
                 Arrivals = ReadArrivals(rider),
                 Scans = ReadScans(rider),
             });
@@ -129,6 +137,10 @@ public static class HistoryStore
     {
         writer.WriteStartObject();
         writer.WriteNumber("child_id", rider.ChildId);
+        if (rider.Name is not null)
+        {
+            writer.WriteString("name", rider.Name);
+        }
 
         writer.WriteStartArray("arrivals");
         foreach (RunArrival arrival in rider.Arrivals)
