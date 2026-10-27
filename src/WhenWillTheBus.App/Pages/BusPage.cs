@@ -46,6 +46,12 @@ public sealed class BusPage : ContentPage
     private readonly Label _arrival = new() { FontSize = 76, FontAttributes = FontAttributes.Bold, TextColor = Theme.Text };
     private readonly Label _meridiem = new() { FontSize = 24, FontAttributes = FontAttributes.Bold, TextColor = Theme.TextDim };
     private readonly Label _countdown = new() { FontSize = 22, FontAttributes = FontAttributes.Bold };
+
+    // What the countdown is ticking towards, when a ticking one is honest. The
+    // Lock Screen card counts in seconds while the app said "in 4 min" for a
+    // whole minute; this keeps the two saying the same thing.
+    private DateTimeOffset? _ticking;
+    private IDispatcherTimer? _ticker;
     private readonly Label _band = new() { FontSize = 14, TextColor = Theme.TextDim };
 
     private readonly Grid _track;
@@ -219,6 +225,26 @@ public sealed class BusPage : ContentPage
         base.OnAppearing();
         await _bus.StartAsync();
         Refresh();
+
+        _ticker ??= Dispatcher.CreateTimer();
+        _ticker.Interval = TimeSpan.FromSeconds(1);
+        _ticker.Tick -= OnTick;
+        _ticker.Tick += OnTick;
+        _ticker.Start();
+    }
+
+    protected override void OnDisappearing()
+    {
+        base.OnDisappearing();
+        _ticker?.Stop();
+    }
+
+    private void OnTick(object? sender, EventArgs e)
+    {
+        if (_ticking is { } target)
+        {
+            _countdown.Text = Countdown(target, ticking: true);
+        }
     }
 
     private void OnBusChanged(object? sender, PropertyChangedEventArgs e) =>
@@ -277,6 +303,7 @@ public sealed class BusPage : ContentPage
         // what I knew" instead of counting confidently down to a time nothing is
         // backing any more.
         bool reporting = _bus.Latest?.Status is BusStatusKind.Current;
+        _ticking = null;
         Color accent = Theme.For(journey.Stage, headline, now);
         Color trackColour = reporting ? accent : Theme.Ink600;
 
@@ -298,7 +325,16 @@ public sealed class BusPage : ContentPage
             DateTimeOffset local = moment.ToLocalTime();
             _arrival.Text = local.ToString("h:mm");
             _meridiem.Text = local.ToString("tt");
-            _countdown.Text = Countdown(moment);
+            // The Lock Screen card's rule (countdownIsHonest): seconds only
+            // when something live is measuring them, and only close in. A
+            // ticking clock off the timetable or a median reads as a
+            // measurement it is not.
+            bool ticking = reporting
+                && prediction.Basis is PredictionBasis.Route or PredictionBasis.Approach
+                && moment - now > TimeSpan.Zero
+                && moment - now <= CountdownCeiling;
+            _ticking = ticking ? moment : null;
+            _countdown.Text = Countdown(moment, ticking);
             _countdown.TextColor = reporting ? accent : Theme.TextDim;
             _countdown.IsVisible = true;
         }
@@ -654,13 +690,21 @@ public sealed class BusPage : ContentPage
         };
     }
 
-    private static string Countdown(DateTimeOffset arrival)
+    /// <summary>The same ceiling as the Lock Screen card's BusPalette.countdownCeiling.</summary>
+    private static readonly TimeSpan CountdownCeiling = TimeSpan.FromMinutes(20);
+
+    private static string Countdown(DateTimeOffset arrival, bool ticking = false)
     {
         TimeSpan away = arrival - DateTimeOffset.Now;
 
         if (away <= TimeSpan.Zero)
         {
             return "due now";
+        }
+
+        if (ticking)
+        {
+            return $"in {(int)away.TotalMinutes}:{away.Seconds:00}";
         }
 
         if (away < TimeSpan.FromHours(1))
