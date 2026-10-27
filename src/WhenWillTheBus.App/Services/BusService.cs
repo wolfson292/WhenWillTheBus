@@ -124,6 +124,22 @@ public sealed class BusService : INotifyPropertyChanged
 
         await LoadHistoryAsync();
 
+        // CATCH UP ON EVERY START, not only when somebody finds the button.
+        // The phone learns only while it is open; the worker learns every run.
+        // Synced once at sign-in and never again, the map on 26 Oct showed 8
+        // past journeys while the worker held 17.
+        if (worker is not null)
+        {
+            try
+            {
+                await SyncHistoryFromWorkerAsync();
+            }
+            catch (Exception error) when (error is InvalidDataException or IOException or TaskCanceledException)
+            {
+                // Costs nothing but freshness: what is on the phone still works.
+            }
+        }
+
         // Card tokens are listened for from launch -- see ActivityTokens --
         // because a card the worker starts hands its token over in a
         // background launch that never reaches this method.
