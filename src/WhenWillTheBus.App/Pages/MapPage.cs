@@ -31,6 +31,10 @@ public sealed class MapPage : ContentPage
 
     private bool _centred;
 
+    // What the route lines on the map were drawn from, so they are redrawn
+    // only when that changes.
+    private (Run Run, int Journeys, int Points)? _drawn;
+
     public MapPage(BusService bus)
     {
         _bus = bus;
@@ -44,14 +48,22 @@ public sealed class MapPage : ContentPage
             IsScrollEnabled = true,
         };
 
+        View legend = Legend();
+
         Content = new Grid
         {
-            RowDefinitions = { new RowDefinition(GridLength.Star), new RowDefinition(GridLength.Auto) },
-            Children = { _map, _caption },
+            RowDefinitions =
+            {
+                new RowDefinition(GridLength.Star),
+                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Auto),
+            },
+            Children = { _map, legend, _caption },
         };
 
         Grid.SetRow(_map, 0);
-        Grid.SetRow(_caption, 1);
+        Grid.SetRow(legend, 1);
+        Grid.SetRow(_caption, 2);
 
         _bus.PropertyChanged += OnBusChanged;
     }
@@ -69,8 +81,6 @@ public sealed class MapPage : ContentPage
     {
         RiderInfo? info = _bus.Latest;
         _map.Pins.Clear();
-        _map.MapElements.Clear();
-
         DrawRecordedRoutes();
 
         if (info is null)
@@ -101,45 +111,106 @@ public sealed class MapPage : ContentPage
     }
 
     /// <summary>
-    /// Draw every recorded journey for this run, faintly.
+    /// Draw every recorded journey for this run, coloured by how often each
+    /// stretch was driven.
     /// </summary>
     /// <remarks>
-    /// Faint and overlapping ON PURPOSE. Each journey is drawn translucent, so
-    /// where they coincide the line darkens and the real route emerges from the
-    /// stack; where one journey wandered, it stays pale. That is a more honest
-    /// picture than an averaged line, which would draw a road the bus has never
-    /// actually taken.
+    /// Faint overlapping lines worked for a handful of journeys and stopped
+    /// working at about ten: the usual road saturated, and a detour taken once
+    /// was still a line of its own, so the two read alike. Counting the
+    /// journeys over each stretch (<see cref="RouteHeat"/>) says which is which.
     ///
-    /// It also answers the question the estimate exists to answer. A bus heading
-    /// away from the stop looks broken as a dot and obvious as a dot on a route.
+    /// Still each real journey, never an averaged line, which would draw a road
+    /// the bus has never actually taken. And blue, not a yellow-to-red ramp:
+    /// yellow is the bus and coral is a fault, so a heat scale in those would
+    /// spend both on decoration. Deeper and thicker means more often.
+    ///
+    /// <para>
+    /// DRAWN ONLY WHEN THE JOURNEYS CHANGE. Refresh runs on every property the
+    /// service raises, several times a poll, and clearing and re-adding every
+    /// overlay each time was affordable at one line per journey. At one per
+    /// coloured stretch it blocked the main thread long enough on 26 Oct that
+    /// iOS killed the app the moment the Map tab was tapped.
+    /// </para>
     /// </remarks>
     private void DrawRecordedRoutes()
     {
-        IReadOnlyList<IReadOnlyList<GeoPoint>> routes = _bus.RoutesFor(_bus.ShownRun);
+        Run run = _bus.ShownRun;
+        IReadOnlyList<IReadOnlyList<GeoPoint>> routes = _bus.RoutesFor(run);
+
+        (Run, int, int) drawing = (run, routes.Count, routes.Sum(route => route.Count));
+        if (_drawn == drawing)
+        {
+            return;
+        }
+
+        _drawn = drawing;
+        _map.MapElements.Clear();
+
         if (routes.Count == 0)
         {
             return;
         }
 
-        // Thin enough that a dozen of them stack without becoming a smear, and
-        // faint enough that the bus marker stays the thing you look at.
-        double alpha = Math.Clamp(1.2 / routes.Count, 0.08, 0.35);
-
-        foreach (IReadOnlyList<GeoPoint> route in routes)
+        // Rarest first, so the usual road is drawn last and lies on top.
+        foreach (RouteHeatSegment segment in RouteHeat.Build(routes))
         {
-            Polyline line = new()
-            {
-                StrokeColor = Color.FromRgba(0.0, 0.45, 0.9, alpha),
-                StrokeWidth = 6,
-            };
+            (Color colour, float width) = Heat(segment.Level);
+            Polyline line = new() { StrokeColor = colour, StrokeWidth = width };
 
-            foreach (GeoPoint point in route)
+            foreach (GeoPoint point in segment.Path)
             {
                 line.Geopath.Add(new Location(point.Latitude, point.Longitude));
             }
 
             _map.MapElements.Add(line);
         }
+    }
+
+    /// <summary>
+    /// One blue, getting LIGHTER, thicker and more solid as a road gets more
+    /// usual, fading towards the map itself for the rare ones.
+    /// </summary>
+    /// <remarks>
+    /// Lighter, not deeper: the map is dark, and on 26 Oct "most days" in a
+    /// deep blue sank into it until every level looked the same.
+    /// </remarks>
+    private static (Color Colour, float Width) Heat(RouteHeatLevel level) => level switch
+    {
+        RouteHeatLevel.MostDays => (Color.FromArgb("#9CCBFF"), 7f),
+        RouteHeatLevel.Often => (Color.FromRgba(0.31, 0.56, 0.90, 0.95), 5f),
+        RouteHeatLevel.Sometimes => (Color.FromRgba(0.23, 0.37, 0.58, 0.85), 4f),
+        _ => (Color.FromRgba(0.36, 0.39, 0.46, 0.75), 3f),
+    };
+
+    private static View Legend()
+    {
+        HorizontalStackLayout row = new() { Spacing = 12, Padding = new Thickness(16, 6, 16, 0) };
+
+        foreach ((RouteHeatLevel level, string words) in (ReadOnlySpan<(RouteHeatLevel, string)>)
+                 [(RouteHeatLevel.MostDays, "most days"), (RouteHeatLevel.Often, "often"),
+                  (RouteHeatLevel.Sometimes, "sometimes"), (RouteHeatLevel.Rarely, "rarely")])
+        {
+            (Color colour, float width) = Heat(level);
+            row.Children.Add(new HorizontalStackLayout
+            {
+                Spacing = 5,
+                Children =
+                {
+                    new BoxView
+                    {
+                        Color = colour,
+                        WidthRequest = 18,
+                        HeightRequest = width,
+                        CornerRadius = width / 2,
+                        VerticalOptions = LayoutOptions.Center,
+                    },
+                    new Label { Text = words, FontSize = 12, VerticalOptions = LayoutOptions.Center },
+                },
+            });
+        }
+
+        return row;
     }
 
     private void Add(string label, string address, GeoPoint at, PinType type) =>
