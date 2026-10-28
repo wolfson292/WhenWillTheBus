@@ -281,14 +281,18 @@ public sealed class PredictionEngine(LocalClock clock)
         }
 
         ScanEvent? pickup = student.LastScanOf(ScanKind.Pickup);
+        ScanEvent? dropoff = student.LastScanOf(ScanKind.Dropoff);
         bool aboard = pickup is not null
             && Clock.DateOf(pickup.Timestamp) == day
-            && Clock.RunOf(pickup.Timestamp) == Run.Pm;
+            && Clock.RunOf(pickup.Timestamp) == Run.Pm
+            && (dropoff is null || dropoff.Timestamp < pickup.Timestamp);
 
-        bool arrived = _pending.TryGetValue(new RunKey(student.ChildId, run, day), out (double ClosestMiles, DateTimeOffset When) pending)
-            && pending.ClosestMiles <= Tuning.ArrivalThresholdMiles;
-
-        return aboard && !arrived
+        // RECORDED counts as arrived, not only pending. Asking only about the
+        // pending record re-opened the window the moment the arrival was
+        // promoted, and the bus sitting at the stop was learned again on every
+        // poll -- twenty copies of 28 Oct in ten minutes, each pushing an older
+        // afternoon out of the history.
+        return aboard && !AlreadyArrived(student.ChildId, run, day)
             ? (window.Value.Start, window.Value.End + Tuning.LateRideGrace)
             : window;
     }
@@ -888,7 +892,7 @@ public sealed class PredictionEngine(LocalClock clock)
                 ? existing
                 : [];
 
-            history.Add(new RunArrival
+            RunArrival learned = new()
             {
                 Run = key.Run,
                 Arrival = pending.When,
@@ -901,10 +905,12 @@ public sealed class PredictionEngine(LocalClock clock)
                 Boarded = BoardingFor(student, key.Run, key.Day),
                 ErrorAtFiveMinutes = errorAtFive,
                 ErrorAtArrival = errorAtArrival,
-            });
+            };
 
-            history.Sort((left, right) => left.Arrival.CompareTo(right.Arrival));
-            _arrivals[key.ChildId] = TrimPerRun(history);
+            // Through Merge, never a plain Add: a bus reaches a stop once per
+            // run per day, so a second record of the same one is a fault
+            // upstream and must not become a second sample.
+            _arrivals[key.ChildId] = TrimPerRun(Merge(history, [learned]));
             changed = true;
         }
 

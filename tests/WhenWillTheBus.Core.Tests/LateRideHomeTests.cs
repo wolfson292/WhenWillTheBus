@@ -59,4 +59,45 @@ public sealed class LateRideHomeTests
         Assert.Equal(Run.Pm, arrival.Run);
         Assert.Equal(At(18, 5), arrival.Arrival);
     }
+
+    /// <summary>
+    /// What went wrong the first time: once promoted, the window re-opened and
+    /// the bus at the stop was learned again on every poll.
+    /// </summary>
+    [Fact]
+    public void TheLateArrivalIsLearnedOnce()
+    {
+        PredictionEngine engine = new(EngineFixtures.Clock);
+        Student rider = Rider(aboard: true);
+        Dictionary<long, Student> riders = new() { [rider.ChildId] = rider };
+
+        engine.FoldReading(rider, At(18, 5), 0.1);
+        engine.PromotePending(riders, At(18, 6));
+
+        // With one past run, that run IS the usual time, so the window really
+        // does re-open around it here; what must not happen is a second record.
+        for (int minute = 7; minute < 20; minute++)
+        {
+            engine.FoldReading(rider, At(18, minute), 0.05);
+            engine.PromotePending(riders, At(18, minute));
+        }
+
+        Assert.Single(engine.ArrivalsFor(rider.ChildId));
+    }
+
+    [Fact]
+    public void ADropOffEndsTheWait()
+    {
+        PredictionEngine engine = new(EngineFixtures.Clock);
+        Student home = Rider(aboard: true) with
+        {
+            Scans =
+            [
+                new ScanEvent(At(16, 44), "school", ScanKind.Pickup, null),
+                new ScanEvent(At(18, 6), "stop", ScanKind.Dropoff, null),
+            ],
+        };
+
+        Assert.False(engine.IsWatching(home, Run.Pm, At(18, 10)));
+    }
 }
