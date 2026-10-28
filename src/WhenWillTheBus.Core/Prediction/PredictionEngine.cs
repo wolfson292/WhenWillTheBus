@@ -181,8 +181,9 @@ public sealed class PredictionEngine(LocalClock clock)
 
             // Only readings inside the TIGHTER arrival window can count as the
             // arrival itself.
-            (DateTimeOffset Start, DateTimeOffset End)? arriving =
-                RunWindows.Arrival(Clock, student.ScheduledFor(run), LearnedTime(student.ChildId, run).Time, when);
+            (DateTimeOffset Start, DateTimeOffset End)? arriving = RideHomeRunning(
+                student, run, key.Day,
+                RunWindows.Arrival(Clock, student.ScheduledFor(run), LearnedTime(student.ChildId, run).Time, when));
 
             if (!RunWindows.IsOpen(arriving, when))
             {
@@ -225,8 +226,9 @@ public sealed class PredictionEngine(LocalClock clock)
     /// </remarks>
     public bool IsWatching(Student student, Run run, DateTimeOffset now)
     {
-        (DateTimeOffset Start, DateTimeOffset End)? window =
-            RunWindows.Approach(Clock, student.ScheduledFor(run), LearnedTime(student.ChildId, run).Time, now);
+        (DateTimeOffset Start, DateTimeOffset End)? window = RideHomeRunning(
+            student, run, Clock.DateOf(now),
+            RunWindows.Approach(Clock, student.ScheduledFor(run), LearnedTime(student.ChildId, run).Time, now));
 
         if (window is null)
         {
@@ -252,6 +254,44 @@ public sealed class PredictionEngine(LocalClock clock)
     }
 
     // ------------------------------------------------------------- predicting
+
+    /// <summary>
+    /// A run's window, held open while the rider is aboard the bus home and it
+    /// has not reached the stop yet.
+    /// </summary>
+    /// <remarks>
+    /// The window is centred on the LEARNED time, which is right on an ordinary
+    /// day and wrong on the days that matter. On 28 Oct a substitute bus ran
+    /// the afternoon route half an hour late: the window shut at 5:54 PM with
+    /// Willow aboard and the bus 2.6 miles out, so the worker stopped watching,
+    /// the Lock Screen card froze, and the arrival was never learned. A rider
+    /// scanned aboard at school is the one certainty that the bus is still
+    /// coming, so the window stays open -- up to <see cref="Tuning.LateRideGrace"/>
+    /// -- until it does.
+    ///
+    /// Afternoons only: a morning pickup scan happens AT the stop, so it is the
+    /// arrival itself, not a reason to keep waiting for one.
+    /// </remarks>
+    private (DateTimeOffset Start, DateTimeOffset End)? RideHomeRunning(
+        Student student, Run run, DateOnly day, (DateTimeOffset Start, DateTimeOffset End)? window)
+    {
+        if (window is null || run != Run.Pm)
+        {
+            return window;
+        }
+
+        ScanEvent? pickup = student.LastScanOf(ScanKind.Pickup);
+        bool aboard = pickup is not null
+            && Clock.DateOf(pickup.Timestamp) == day
+            && Clock.RunOf(pickup.Timestamp) == Run.Pm;
+
+        bool arrived = _pending.TryGetValue(new RunKey(student.ChildId, run, day), out (double ClosestMiles, DateTimeOffset When) pending)
+            && pending.ClosestMiles <= Tuning.ArrivalThresholdMiles;
+
+        return aboard && !arrived
+            ? (window.Value.Start, window.Value.End + Tuning.LateRideGrace)
+            : window;
+    }
 
     /// <summary>Predict when the bus next reaches this rider's stop.</summary>
     public ArrivalPrediction? PredictNextArrival(Student student, DateTimeOffset now)
@@ -741,8 +781,9 @@ public sealed class PredictionEngine(LocalClock clock)
     /// </summary>
     public bool StillDue(Student student, Run run, DateTimeOffset now)
     {
-        (DateTimeOffset Start, DateTimeOffset End)? window =
-            RunWindows.Arrival(Clock, student.ScheduledFor(run), LearnedTime(student.ChildId, run).Time, now);
+        (DateTimeOffset Start, DateTimeOffset End)? window = RideHomeRunning(
+            student, run, Clock.DateOf(now),
+            RunWindows.Arrival(Clock, student.ScheduledFor(run), LearnedTime(student.ChildId, run).Time, now));
 
         return window is not null && now <= window.Value.End;
     }
@@ -816,8 +857,9 @@ public sealed class PredictionEngine(LocalClock clock)
                 continue;
             }
 
-            (DateTimeOffset Start, DateTimeOffset End)? window = RunWindows.Arrival(
-                Clock, student.ScheduledFor(key.Run), LearnedTime(key.ChildId, key.Run).Time, now);
+            (DateTimeOffset Start, DateTimeOffset End)? window = RideHomeRunning(
+                student, key.Run, key.Day,
+                RunWindows.Arrival(Clock, student.ScheduledFor(key.Run), LearnedTime(key.ChildId, key.Run).Time, now));
 
             bool stillOpen = window is not null && key.Day == Clock.DateOf(now) && now <= window.Value.End;
             if (stillOpen)

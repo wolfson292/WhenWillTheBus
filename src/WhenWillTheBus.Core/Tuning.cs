@@ -37,6 +37,14 @@ public static class Tuning
     public static readonly TimeSpan RunWindow = TimeSpan.FromMinutes(30);
 
     /// <summary>
+    /// How much longer an afternoon run is watched while the rider is aboard and
+    /// the bus has not reached the stop. A substitute ran 30+ minutes late on
+    /// 28 Oct; an hour covers that with room, and still ends a run whose
+    /// arrival was simply missed.
+    /// </summary>
+    public static readonly TimeSpan LateRideGrace = TimeSpan.FromMinutes(60);
+
+    /// <summary>
     /// Watching has to start well before the arrival window opens, or the outer
     /// rungs are never seen being crossed.
     /// </summary>
