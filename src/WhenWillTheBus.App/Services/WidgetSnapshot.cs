@@ -124,5 +124,5 @@ public static partial class WidgetSnapshot
         ArrivalPrediction? prediction,
         RiderInfo? info,
         DateTimeOffset now) =>
-        HomeSnapshot.Serialise(rider?.Name, rider?.BusNumber, journey, prediction, info?.DistanceMiles, now);
+        HomeSnapshot.Serialise(rider?.Name, rider?.ShownBus, journey, prediction, info?.DistanceMiles, now);
 }

@@ -51,7 +51,17 @@ public sealed class MonitorOptions
     /// <summary>The roster changes a handful of times a year.</summary>
     public TimeSpan RosterRefresh { get; set; } = TimeSpan.FromHours(6);
 
+    /// <summary>
+    /// How often the roster is re-read while a run is being watched -- because
+    /// the roster is also where a SUBSTITUTE BUS appears, and that is decided on
+    /// the morning, often after the six-hourly read has already happened.
+    /// </summary>
+    public TimeSpan SubstituteCheck { get; set; } = TimeSpan.FromMinutes(10);
+
     public string HistoryPath => Path.Combine(DataDirectory, "history.json");
+
+    /// <summary>Which substitute buses have been announced, so a restart does not repeat one.</summary>
+    public string SubstitutesPath => Path.Combine(DataDirectory, "substitutes.json");
 
     public string RegistryPath => Path.Combine(DataDirectory, "activities.json");
 

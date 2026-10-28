@@ -120,7 +120,7 @@ public sealed class RunAlerter(
             logger.LogInformation("A card for {JourneyId} did not say which phone it is on", journeyId);
         }
 
-        BusActivityIdentity identity = new(journeyId, student.Name, student.BusNumber, student.ChildId);
+        BusActivityIdentity identity = new(journeyId, student.Name, student.ShownBus, student.ChildId);
         bool forgotAToken = false;
 
         foreach (ClientIdentity phone in clients.All)
@@ -170,6 +170,45 @@ public sealed class RunAlerter(
         {
             await clients.SaveAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Tell every phone that a substitute bus is covering the route. Returns
+    /// whether any phone was reached.
+    /// </summary>
+    /// <remarks>
+    /// An ordinary notification, sent once per substitute per day (the caller
+    /// keeps track). A card already on a Lock Screen keeps the bus number it
+    /// was started with -- Apple fixes a card's attributes at start -- so this
+    /// is the message that says the number on it changed.
+    /// </remarks>
+    public async Task<bool> SubstituteAsync(Student student, CancellationToken cancellationToken)
+    {
+        (string title, string body) = RunAlerts.SubstituteText(student);
+        logger.LogInformation("Substitute bus {Sub} for {Bus}", student.SubstituteBus, student.BusNumber);
+
+        bool reached = false;
+        foreach (ClientIdentity phone in clients.All)
+        {
+            if (phone.DeviceToken is not string deviceToken)
+            {
+                continue;
+            }
+
+            PushResult told = await apns.AlertAsync(
+                deviceToken, title, body, sandbox: phone.Sandbox,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            reached |= told.Delivered;
+            if (!told.Delivered)
+            {
+                logger.LogWarning(
+                    "Substitute alert to client {Id} failed: {Reason}",
+                    ClientRegistry.Short(phone.Id), told.Reason);
+            }
+        }
+
+        return reached;
     }
 
     /// <summary>Drop what was sent for this rider's earlier journeys.</summary>

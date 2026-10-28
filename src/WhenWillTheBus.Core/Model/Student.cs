@@ -21,6 +21,15 @@ public sealed record Student
     /// <summary>The API names a replacement vehicle here when one is covering the route.</summary>
     public string? SubstituteBus { get; init; }
 
+    /// <summary>
+    /// The bus to look out for, as WheresTheBus's own app writes it: the
+    /// substitute first, the route's usual bus after it. <see cref="BusNumber"/>
+    /// stays the usual one, because that is what the API tracks the route by.
+    /// </summary>
+    public string? ShownBus => SubstituteBus is { Length: > 0 } sub && sub != BusNumber
+        ? BusNumber is { Length: > 0 } usual ? $"{sub} ({usual})" : sub
+        : BusNumber;
+
     public string? SchoolName { get; init; }
 
     /// <summary>The published timetable. CAN BE BADLY WRONG — see <see cref="RunWindows"/>.</summary>

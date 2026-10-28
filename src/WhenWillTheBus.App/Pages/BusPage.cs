@@ -266,8 +266,8 @@ public sealed class BusPage : ContentPage
 
         Student? rider = _bus.Rider;
         _rider.Text = rider?.Name ?? "Bus";
-        _busChip.IsVisible = rider?.BusNumber is { Length: > 0 };
-        _busNumber.Text = rider?.BusNumber is { Length: > 0 } number ? $"Bus {number}" : string.Empty;
+        _busChip.IsVisible = rider?.ShownBus is { Length: > 0 };
+        _busNumber.Text = rider?.ShownBus is { Length: > 0 } number ? $"Bus {number}" : string.Empty;
         _footer.Text = FooterSummary(rider);
 
         Journey journey = _bus.Journey;

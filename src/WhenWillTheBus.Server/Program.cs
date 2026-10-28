@@ -419,7 +419,7 @@ app.MapGet("/widget", (BusMonitor monitor, PredictionEngine engine, LocalClock c
     double? miles = journey.Active ? engine.LatestFor(rider.ChildId)?.DistanceMiles : null;
 
     return Results.Text(
-        HomeSnapshot.Serialise(rider.Name, rider.BusNumber, journey, prediction, miles, now),
+        HomeSnapshot.Serialise(rider.Name, rider.ShownBus, journey, prediction, miles, now),
         "application/json");
 });
 

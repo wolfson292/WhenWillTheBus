@@ -68,6 +68,7 @@ public static class RiderState
         writer.WriteNumber("childId", student.ChildId);
         writer.WriteString("name", student.Name);
         WriteOptional(writer, "busNumber", student.BusNumber);
+        WriteOptional(writer, "substituteBus", student.SubstituteBus);
         WriteOptional(writer, "schoolName", student.SchoolName);
         WriteOptional(writer, "stopAddress", student.StopAddress);
         WriteClock(writer, "amScheduled", student.AmScheduled);

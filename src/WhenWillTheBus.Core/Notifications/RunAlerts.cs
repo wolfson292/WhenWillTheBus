@@ -90,6 +90,17 @@ public static class RunAlerts
     /// What the alert says. When both are due at once they go out as ONE alert
     /// in the more urgent wording: two buzzes a second apart is noise.
     /// </summary>
+    /// <summary>What to say when a substitute bus is learned of.</summary>
+    /// <remarks>
+    /// Its own message, not folded into the run alerts: it matters BEFORE the
+    /// bus sets off, because the thing to look out for at the kerb is a
+    /// different number on a different bus.
+    /// </remarks>
+    public static (string Title, string Body) SubstituteText(Student student) =>
+        ("Substitute bus today", student.BusNumber is { Length: > 0 } usual
+            ? $"{student.Name} is on bus {student.SubstituteBus} today, covering for {usual}."
+            : $"{student.Name} is on bus {student.SubstituteBus} today.");
+
     public static (string Title, string Body) TextFor(
         RunAlert alert,
         Journey journey,

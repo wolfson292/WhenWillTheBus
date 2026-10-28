@@ -57,6 +57,14 @@ public sealed class BusMonitor(
     // on purpose: it is how a rider who reappears under a new id is recognised.
     private readonly Dictionary<long, string?> _names = [];
 
+    // The substitute last announced for each rider, as "date bus". On disk, so
+    // a redeploy on a sub-bus morning does not buzz every phone a second time.
+    private Dictionary<long, string> _announced = [];
+
+    // Whether the last poll had a run in hand, which is when the roster is
+    // re-read often enough to catch a substitute assigned that morning.
+    private bool _busy;
+
     /// <summary>The riders currently known, for the status endpoint.</summary>
     public IReadOnlyDictionary<long, Student> Students => _students;
 
@@ -109,6 +117,8 @@ public sealed class BusMonitor(
             .ConfigureAwait(false);
         await releases.LoadAsync(_options.ReleasePath, token).ConfigureAwait(false);
 
+        _announced = await LoadAnnouncedAsync(token).ConfigureAwait(false);
+
         try
         {
             IReadOnlyList<StoredRider> stored = await HistoryStore
@@ -138,7 +148,8 @@ public sealed class BusMonitor(
     {
         DateTimeOffset now = clock.Now;
 
-        if (now - _rosterRefreshedAt >= _options.RosterRefresh || _students.Count == 0)
+        TimeSpan rosterEvery = _busy ? _options.SubstituteCheck : _options.RosterRefresh;
+        if (now - _rosterRefreshedAt >= rosterEvery || _students.Count == 0)
         {
             await RefreshRosterAsync(token).ConfigureAwait(false);
             _rosterRefreshedAt = now;
@@ -261,6 +272,7 @@ public sealed class BusMonitor(
             await clients.SaveAsync(token).ConfigureAwait(false);
         }
 
+        _busy = busy;
         return busy ? _options.BusPoll : _options.IdlePoll;
     }
 
@@ -314,6 +326,71 @@ public sealed class BusMonitor(
         if (moves.Count > 0)
         {
             await SaveHistoryAsync(token, "a rider renumbered").ConfigureAwait(false);
+        }
+
+        await AnnounceSubstitutesAsync(token).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Tell the phones about a substitute bus the first time it is seen each day.
+    /// </summary>
+    /// <remarks>
+    /// On 28 Oct Willow rode bus 1743 in place of 2563. WheresTheBus's own app
+    /// said so; this one said "Bus 2563" all day, which is the wrong number to
+    /// look for at the kerb.
+    /// </remarks>
+    private async Task AnnounceSubstitutesAsync(CancellationToken token)
+    {
+        DateOnly today = clock.DateOf(clock.Now);
+        bool changed = false;
+
+        foreach (Student student in _students.Values)
+        {
+            if (SubstituteKey(student, today) is not string key
+                || _announced.GetValueOrDefault(student.ChildId) == key)
+            {
+                continue;
+            }
+
+            // Recorded BEFORE sending, like the run alerts: a refused push is
+            // logged, not retried every ten minutes all day.
+            _announced[student.ChildId] = key;
+            changed = true;
+            await alerter.SubstituteAsync(student, token).ConfigureAwait(false);
+        }
+
+        if (changed)
+        {
+            await AtomicFile.WriteAsync(
+                _options.SubstitutesPath,
+                System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(_announced),
+                token).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>What identifies one substitute on one day, or null when there is none.</summary>
+    public static string? SubstituteKey(Student student, DateOnly day) =>
+        student.SubstituteBus is { Length: > 0 } sub && sub != student.BusNumber
+            ? $"{day:yyyy-MM-dd} {sub}"
+            : null;
+
+    private async Task<Dictionary<long, string>> LoadAnnouncedAsync(CancellationToken token)
+    {
+        try
+        {
+            if (!File.Exists(_options.SubstitutesPath))
+            {
+                return [];
+            }
+
+            byte[] bytes = await File.ReadAllBytesAsync(_options.SubstitutesPath, token).ConfigureAwait(false);
+            return System.Text.Json.JsonSerializer.Deserialize<Dictionary<long, string>>(bytes) ?? [];
+        }
+        catch (Exception error) when (error is IOException or System.Text.Json.JsonException)
+        {
+            // Worst case a substitute is announced twice. Not worth stopping for.
+            logger.LogWarning("Could not read announced substitutes: {Message}", error.Message);
+            return [];
         }
     }
 

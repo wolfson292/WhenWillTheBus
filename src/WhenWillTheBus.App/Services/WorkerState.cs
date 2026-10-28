@@ -60,6 +60,7 @@ public static class WorkerState
         ChildId = childId,
         Name = element.String("name") ?? $"Rider {childId}",
         BusNumber = element.String("busNumber"),
+        SubstituteBus = element.String("substituteBus"),
         SchoolName = element.String("schoolName"),
         StopAddress = element.String("stopAddress"),
         AmScheduled = ReadClock(element, "amScheduled"),
