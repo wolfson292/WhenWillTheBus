@@ -10,7 +10,10 @@ redirecting it cuts the app off.
 **`https://nas.denlair.com/worker/`** is a second way in, for a browser: the
 root sends a person to `/manage`, which asks for the key (any username).
 
-Four files, copied into the SWAG config volume:
+**`https://nas.denlair.com/bus/`** is the app's Bus and Map tabs as a web page,
+for a laptop. It shows where the bus is, so it asks for the same family key.
+
+Five files, copied into the SWAG config volume:
 
 | File | Goes to | Why |
 |---|---|---|
@@ -18,6 +21,7 @@ Four files, copied into the SWAG config volume:
 | `whenwillthebus-location.conf` | `nginx/` | everything about reaching the worker except where it is mounted: the Cloudflare-only rule, the rate limit, the upstream. Included by both locations, so the two cannot drift apart. |
 | `whenwillthebus.subfolder.conf` | `nginx/proxy-confs/` | `/whenwillthebus/`, the app's address |
 | `worker.subfolder.conf` | `nginx/proxy-confs/` | `/worker/`, for a browser |
+| `bus.subfolder.conf` | `nginx/proxy-confs/` | `/bus/`, the Bus and Map tabs for a laptop. Not stripped: the worker serves the page at `/bus/` itself |
 
 ```bash
 scp deploy/swag/*.conf user@host:/tmp/
@@ -26,6 +30,7 @@ ssh user@host '
   sudo install -m 644 /tmp/whenwillthebus-location.conf  /docker/swag/nginx/
   sudo install -m 644 /tmp/worker.subfolder.conf          /docker/swag/nginx/proxy-confs/
   sudo install -m 644 /tmp/whenwillthebus.subfolder.conf  /docker/swag/nginx/proxy-confs/
+  sudo install -m 644 /tmp/bus.subfolder.conf             /docker/swag/nginx/proxy-confs/
   sudo docker exec swag nginx -t && sudo docker exec swag nginx -s reload'
 ```
 

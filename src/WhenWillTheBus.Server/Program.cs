@@ -256,7 +256,7 @@ app.Use(async (context, next) =>
         // Only the page challenges. A 401 carrying this header makes a browser
         // prompt, which is right for a person and wrong for the app -- it would
         // turn a bad key into a dialog nobody is there to answer.
-        if (context.Request.Path.StartsWithSegments("/manage"))
+        if (context.Request.Path.StartsWithSegments("/manage") || context.Request.Path.StartsWithSegments("/bus"))
         {
             context.Response.Headers.WWWAuthenticate = "Basic realm=\"When Will The Bus\", charset=\"UTF-8\"";
         }
@@ -1031,6 +1031,35 @@ app.MapGet("/manage", async (
         ManagementPage.Render(
             monitor.Students, engine, clients.All, registry.All, clock, started, now, rows),
         "text/html; charset=utf-8");
+});
+
+// The app's Bus and Map tabs, for a laptop: https://nas.denlair.com/bus/.
+//
+// UNLIKE /manage, THIS PAGE SHOWS WHERE THE BUS IS -- it is the Map tab -- so
+// it asks for the same family key the app holds, and no less. /bus without the
+// slash is sent to /bus/ RELATIVELY, so the page's own relative links resolve
+// whether it is reached at /bus/, /worker/bus/ or directly on the LAN. (Not a
+// route of its own: routing matches /bus and /bus/ alike, and a /bus route
+// redirected /bus/ to /bus/bus/.)
+app.MapGet("/bus/state", (BusMonitor monitor, PredictionEngine engine, LocalClock clock) =>
+    Results.Text(BusView.State(monitor.Students, engine, clock, clock.Now), "application/json"));
+
+app.MapGet("/bus/routes", (BusMonitor monitor, PredictionEngine engine, long child, string run) =>
+    monitor.Students.TryGetValue(child, out Student? student)
+        ? Results.Text(BusView.RouteMap(student, engine, run == "am" ? Run.Am : Run.Pm), "application/json")
+        : Results.NotFound());
+
+app.MapGet("/bus/{file?}", (HttpContext context, string? file) =>
+{
+    if (file is null && context.Request.Path.Value?.EndsWith('/') != true)
+    {
+        return Results.Redirect("bus/");
+    }
+
+    context.Response.Headers.ContentSecurityPolicy = WebFiles.Policy;
+    context.Response.Headers.XContentTypeOptions = "nosniff";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin";
+    return WebFiles.Serve(file ?? string.Empty);
 });
 
 // What the worker knows, WITHOUT coordinates. A status page is a convenience;

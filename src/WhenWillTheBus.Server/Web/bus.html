@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="strict-origin">
+<title>Bus</title>
+<link rel="stylesheet" href="leaflet.css">
+<link rel="stylesheet" href="bus.css">
+</head>
+<body>
+<main>
+  <section id="card" aria-label="Bus">
+    <header>
+      <h1 id="rider">Bus</h1>
+      <span id="chip" hidden></span>
+    </header>
+    <p id="problem" class="fault" hidden></p>
+
+    <div id="estimate">
+      <p id="stage" class="dim"></p>
+      <p id="time"><span id="arrival"></span><span id="meridiem"></span></p>
+      <p id="under"><span id="countdown"></span><span id="band" class="dim"></span></p>
+
+      <div id="track" hidden>
+        <div class="rail"><div id="fill"></div><div id="knob"></div><div class="stop"></div></div>
+        <div class="captions dim"><span id="left"></span><span id="right"></span></div>
+      </div>
+
+      <div class="panel" id="confidence">
+        <div class="basis"><span class="dots"><i></i><i></i><i></i><i></i></span><b id="basis"></b></div>
+        <p id="why" class="mid"></p>
+      </div>
+    </div>
+
+    <div class="panel" id="facts">
+      <div class="row"><i id="lamp" class="lamp"></i><span>Bus GPS</span><span id="gps" class="dim"></span></div>
+      <details id="scanlist">
+        <summary class="row"><i></i><span>Scans today</span><span id="scans" class="dim"></span></summary>
+        <div id="scandays"></div>
+      </details>
+      <div class="row" id="schoolrow"><i></i><span>Reached school</span><span id="school" class="dim"></span></div>
+    </div>
+
+    <p id="footer" class="dim small"></p>
+  </section>
+
+  <section id="mapside" aria-label="Map">
+    <div id="map"></div>
+    <div id="legend" class="small">
+      <span><i class="most"></i>most days</span>
+      <span><i class="often"></i>often</span>
+      <span><i class="sometimes"></i>sometimes</span>
+      <span><i class="rarely"></i>rarely</span>
+    </div>
+    <p id="caption" class="small"></p>
+  </section>
+</main>
+<script src="leaflet.js"></script>
+<script src="bus.js"></script>
+</body>
+</html>

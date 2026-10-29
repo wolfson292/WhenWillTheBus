@@ -1,0 +1,97 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* The app's palette (Theme.cs). Colours arrive from the worker as names. */
+:root {
+  --ink900: #0E1117; --ink800: #151A23; --ink700: #1C232E; --ink600: #2E3746;
+  --text: #EDF1F7; --mid: #AEB9C9; --dim: #8A96A9;
+  --bus: #F6C445; --far: #6E96C9; --aboard: #3FB98A; --fault: #FF7A6B;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--ink900); color: var(--text);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+p { margin: 0; }
+[hidden] { display: none !important; }
+
+/* Side by side on a laptop -- the reason this page exists -- stacked on a phone. */
+main { display: grid; grid-template-columns: minmax(340px, 440px) 1fr; height: 100%; }
+#card { padding: 20px 24px 28px; overflow-y: auto; }
+#mapside { display: grid; grid-template-rows: 1fr auto auto; min-height: 0; border-left: 1px solid var(--ink700); }
+#map { min-height: 300px; background: var(--ink800); }
+@media (max-width: 760px) {
+  main { grid-template-columns: 1fr; height: auto; }
+  #mapside { border-left: 0; border-top: 1px solid var(--ink700); }
+  #map { height: 70vh; }
+}
+
+.dim { color: var(--dim); } .mid { color: var(--mid); } .small { font-size: 12px; }
+.fault { color: var(--fault); }
+.c-bus { color: var(--bus); } .c-far { color: var(--far); } .c-aboard { color: var(--aboard); }
+.c-fault { color: var(--fault); } .c-dim { color: var(--dim); }
+
+header { display: flex; align-items: center; gap: 10px; height: 34px; }
+h1 { font-size: 17px; margin: 0; }
+#chip { background: var(--ink700); color: var(--mid); font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+#problem { margin-top: 14px; font-size: 13px; }
+
+#estimate { margin-top: 26px; }
+#stage { font-size: 15px; }
+#time { margin-top: 6px; line-height: 1; }
+#arrival { font-size: 76px; font-weight: 700; letter-spacing: -1px; }
+#meridiem { font-size: 24px; font-weight: 700; color: var(--dim); margin-left: 6px; }
+#under { margin-top: 8px; display: flex; align-items: baseline; gap: 10px; }
+#countdown { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+#track { margin-top: 28px; }
+.rail { position: relative; height: 30px; }
+.rail::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 6px; border-radius: 3px; background: var(--ink700); }
+#fill { position: absolute; left: 0; top: 12px; height: 6px; border-radius: 3px; }
+#knob { position: absolute; top: 0; width: 30px; height: 30px; margin-left: -15px; border-radius: 10px; border: 4px solid var(--ink900); }
+#knob::after { content: ""; position: absolute; left: 4px; top: 8px; width: 14px; height: 5px; border-radius: 2.5px; background: var(--ink900); }
+.stop { position: absolute; right: 0; top: 5px; width: 20px; height: 20px; border-radius: 10px; border: 4px solid var(--ink600); background: var(--ink900); }
+.captions { display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px; }
+.bg-bus { background: var(--bus); } .bg-far { background: var(--far); } .bg-aboard { background: var(--aboard); }
+.bg-dim { background: var(--ink600); }
+
+.panel { background: var(--ink800); border-radius: 16px; padding: 15px 16px; margin-top: 12px; }
+#confidence { margin-top: 22px; }
+.basis { display: flex; align-items: center; gap: 5px; font-size: 13px; }
+.basis b { margin-left: 4px; }
+.dots i { display: inline-block; width: 7px; height: 7px; border-radius: 4px; background: var(--ink600); margin-right: 5px; vertical-align: middle; }
+#why { margin-top: 9px; font-size: 13px; }
+
+#facts { padding-top: 4px; padding-bottom: 4px; }
+.row { display: grid; grid-template-columns: 8px auto 1fr; gap: 9px; align-items: center; padding: 11px 0; }
+.row > span:last-child { text-align: right; font-size: 13px; }
+#facts > * + * { border-top: 1px solid var(--ink700); }
+.lamp { width: 8px; height: 8px; border-radius: 4px; background: var(--ink600); }
+.lamp.c-aboard { background: var(--aboard); } .lamp.c-fault { background: var(--fault); }
+details summary { list-style: none; cursor: pointer; }
+details summary::-webkit-details-marker { display: none; }
+details summary > span:nth-child(2)::after { content: " ›"; color: var(--dim); }
+details[open] summary > span:nth-child(2)::after { content: " ⌄"; }
+#scandays h3 { font-size: 13px; margin: 10px 0 2px; }
+#scandays p { padding: 4px 0 4px 17px; }
+#scandays .when { font-size: 13px; color: var(--dim); }
+
+#footer { margin-top: 14px; }
+
+#legend { display: flex; gap: 12px; padding: 6px 16px 0; }
+#legend i { display: inline-block; width: 18px; border-radius: 4px; margin-right: 5px; vertical-align: middle; }
+#legend .most { height: 7px; background: #9CCBFF; }
+#legend .often { height: 5px; background: rgba(79, 143, 230, .95); }
+#legend .sometimes { height: 4px; background: rgba(59, 94, 148, .85); }
+#legend .rarely { height: 3px; background: rgba(92, 99, 117, .75); }
+#caption { padding: 8px 16px; }
+
+/* A dark map, as the app's: the route colours were chosen against one. */
+.leaflet-container { background: var(--ink800); font: inherit; }
+.leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.4); }
+.leaflet-control-attribution { background: rgba(14, 17, 23, .75) !important; color: var(--dim); }
+.leaflet-control-attribution a { color: var(--mid); }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--ink700); color: var(--text); }
+.leaflet-popup-content { margin: 10px 12px; }
+.leaflet-popup-content b { display: block; }
+.leaflet-bar a { background: var(--ink700); color: var(--text); border-color: var(--ink600); }
+.pin-label { background: var(--ink700); color: var(--text); border: 0; box-shadow: none; font-weight: 600; }
+.pin-label::before { display: none; }
